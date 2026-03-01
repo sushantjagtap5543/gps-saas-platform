@@ -176,8 +176,9 @@ fi
 # ═══════════════════════════════════════════════════════════════
 step "STEP 10 — Nginx SSL directory"
 # ═══════════════════════════════════════════════════════════════
-mkdir -p "$SCRIPT_DIR/nginx/ssl"
-chmod 700 "$SCRIPT_DIR/nginx/ssl"
+sudo sudo mkdir -p "$SCRIPT_DIR/nginx/ssl"
+sudo chmod 700 "$SCRIPT_DIR/nginx/ssl"
+sudo chown "$USER":"$USER" "$SCRIPT_DIR/nginx/ssl" 2>/dev/null || true
 ok "nginx/ssl directory ready"
 
 # ═══════════════════════════════════════════════════════════════
