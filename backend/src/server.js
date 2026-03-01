@@ -5,6 +5,27 @@ const { initSocket }  = require("./socket/socket");
 const { sequelize }   = require("./models");
 const logger = require("./utils/logger");
 
+// ── Early environment validation ──────────────────────────────
+const REQUIRED_ENV = [
+  "POSTGRES_HOST", "POSTGRES_PORT", "POSTGRES_DB",
+  "POSTGRES_USER", "POSTGRES_PASSWORD",
+  "JWT_SECRET", "JWT_REFRESH_SECRET"
+];
+const missing = REQUIRED_ENV.filter(k => !process.env[k]);
+if (missing.length > 0) {
+  // eslint-disable-next-line no-console
+  console.error(`[FATAL] Missing required environment variables: ${missing.join(", ")}`);
+  console.error("        Check your .env.production file and docker-compose.yml");
+  process.exit(1);
+}
+if (process.env.JWT_SECRET.startsWith("REPLACE_") ||
+    process.env.JWT_REFRESH_SECRET.startsWith("REPLACE_")) {
+  // eslint-disable-next-line no-console
+  console.error("[FATAL] JWT_SECRET / JWT_REFRESH_SECRET are still placeholder values.");
+  console.error("        Run: openssl rand -hex 64  and update .env.production");
+  process.exit(1);
+}
+
 const PORT   = parseInt(process.env.API_PORT) || 3000;
 const server = http.createServer(app);
 initSocket(server);
