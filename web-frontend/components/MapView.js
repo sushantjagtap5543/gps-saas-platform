@@ -1,0 +1,1 @@
+marker.setRotationAngle(vehicle.heading);

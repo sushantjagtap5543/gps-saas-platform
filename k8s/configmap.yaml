@@ -1,0 +1,19 @@
+type: Opaque
+stringData:
+  JWT_SECRET: supersecret
+  JWT_REFRESH_SECRET: refreshsecret
+  DB_PASSWORD: postgres
+  REDIS_HOST: redis
+3️⃣ ConfigMap
+
+📂 configmap.yaml
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: gps-saas
+data:
+  DB_HOST: postgres
+  DB_USER: postgres
+  DB_NAME: gpsdb

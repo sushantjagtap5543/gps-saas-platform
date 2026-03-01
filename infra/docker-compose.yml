@@ -1,0 +1,12 @@
+version: "3"
+services:
+  postgres:
+    image: postgis/postgis
+  redis:
+    image: redis
+  backend:
+    build: ./backend
+  tcp-server:
+    build: ./tcp-server
+  nginx:
+    image: nginx
