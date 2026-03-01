@@ -44,8 +44,6 @@ export default function Billing() {
             <button onClick={() => subscribe(p.id)} style={{ width:"100%", padding:"10px", background:"#3b82f6", color:"#fff", border:"none", borderRadius:"8px", cursor:"pointer" }}>Subscribe</button>
           </div>
         ))}
-      </div>
-      <script src="https://checkout.razorpay.com/v1/checkout.js" />
-    </div>
+      </div>    </div>
   );
 }

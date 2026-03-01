@@ -1,0 +1,29 @@
+# Never commit these
+.env.production
+.env.local
+.env
+
+# Node modules
+node_modules/
+*/node_modules/
+
+# Build outputs
+*/dist/
+*/build/
+
+# Logs
+logs/
+*.log
+
+# SSL certificates
+nginx/ssl/
+
+# Firebase service account
+notifications/push/serviceAccount.json
+
+# PDF invoices
+backend/invoices/
+
+# OS
+.DS_Store
+Thumbs.db

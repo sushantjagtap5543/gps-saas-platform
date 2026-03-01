@@ -79,7 +79,7 @@ CREATE TABLE IF NOT EXISTS gps_history (
 -- Create 6 months of partitions
 DO $$ DECLARE m RECORD;
 BEGIN
-  FOR m IN SELECT generate_series('2025-01-01'::date, '2026-06-01'::date, '1 month'::interval) AS month LOOP
+  FOR m IN SELECT generate_series('2025-01-01'::date, '2030-12-01'::date, '1 month'::interval) AS month LOOP
     EXECUTE format('CREATE TABLE IF NOT EXISTS gps_history_%s PARTITION OF gps_history FOR VALUES FROM (%L) TO (%L)',
       to_char(m.month, 'YYYY_MM'), m.month, m.month + interval '1 month');
   END LOOP;

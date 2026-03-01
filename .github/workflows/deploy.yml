@@ -12,7 +12,8 @@ env:
   NOTIFY_IMAGE:   ${{ secrets.DOCKER_USERNAME }}/gps-notifications
 
 jobs:
-  build:
+  build-and-push:
+    name: Build & Push Docker Images
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -35,36 +36,37 @@ jobs:
         with:
           context: ./tcp-server
           push: true
-          tags: ${{ env.TCP_IMAGE }}:latest
+          tags: ${{ env.TCP_IMAGE }}:latest,${{ env.TCP_IMAGE }}:${{ github.sha }}
 
       - name: Build & Push Frontend
         uses: docker/build-push-action@v5
         with:
           context: ./frontend
           push: true
-          tags: ${{ env.FRONTEND_IMAGE }}:latest
+          tags: ${{ env.FRONTEND_IMAGE }}:latest,${{ env.FRONTEND_IMAGE }}:${{ github.sha }}
 
-      - name: Build & Push Admin
+      - name: Build & Push Admin Panel
         uses: docker/build-push-action@v5
         with:
           context: ./gps-admin
           push: true
-          tags: ${{ env.ADMIN_IMAGE }}:latest
+          tags: ${{ env.ADMIN_IMAGE }}:latest,${{ env.ADMIN_IMAGE }}:${{ github.sha }}
 
-      - name: Build & Push Notifications
+      - name: Build & Push Notifications Worker
         uses: docker/build-push-action@v5
         with:
           context: ./notifications
           push: true
-          tags: ${{ env.NOTIFY_IMAGE }}:latest
+          tags: ${{ env.NOTIFY_IMAGE }}:latest,${{ env.NOTIFY_IMAGE }}:${{ github.sha }}
 
   deploy:
-    needs: build
+    name: Deploy to Lightsail
+    needs: build-and-push
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Deploy to AWS Lightsail
+      - name: Deploy to AWS Lightsail via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
           host:     ${{ secrets.LIGHTSAIL_HOST }}
@@ -72,9 +74,24 @@ jobs:
           key:      ${{ secrets.LIGHTSAIL_SSH_KEY }}
           script: |
             set -e
+
+            # First-time clone if directory doesn't exist
+            if [ ! -d ~/gps-saas-platform ]; then
+              git clone https://github.com/sushantjagtap5543/gps-saas-platform ~/gps-saas-platform
+            fi
+
             cd ~/gps-saas-platform
             git pull origin main
+
+            # Pull latest images and restart all services
             docker compose pull
             docker compose up -d --remove-orphans
+
+            # Clean up old images to save disk space
             docker image prune -f
-            echo "Deployed at $(date)"
+
+            echo "✅ Deployed at $(date)"
+
+            # Quick health check
+            sleep 15
+            curl -sf http://localhost:3000/health | python3 -c "import sys,json; d=json.load(sys.stdin); print('Health:', d['status'])" || echo "⚠️ Health check returned unexpected response"
