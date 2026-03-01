@@ -1,1 +1,0 @@
-console.log("Partition creation script ready");

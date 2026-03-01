@@ -1,15 +1,34 @@
 const razorpay = require("../config/razorpay");
 const db = require("../models");
+const logger = require("../utils/logger");
+
+exports.getPlans = async (req, res) => {
+  try {
+    const plans = await db.Plan.findAll({ order: [["price","ASC"]] });
+    return res.json(plans);
+  } catch { return res.status(500).json({ message: "Failed to fetch plans" }); }
+};
 
 exports.createOrder = async (req, res) => {
+  try {
+    const { plan_id } = req.body;
+    if (!plan_id) return res.status(400).json({ message: "plan_id required" });
+    const plan = await db.Plan.findByPk(plan_id);
+    if (!plan) return res.status(404).json({ message: "Plan not found" });
+    const order = await razorpay.orders.create({
+      amount: plan.price, currency: "INR", receipt: "rcpt_" + Date.now(),
+      notes: { user_id: req.user.id, plan_id: plan.id }
+    });
+    return res.json({ order_id: order.id, amount: order.amount, currency: order.currency, key: process.env.RAZORPAY_KEY, plan_name: plan.name });
+  } catch (err) {
+    logger.error("[BILLING] createOrder: " + err.message);
+    return res.status(500).json({ message: "Failed to create order" });
+  }
+};
 
-  const plan = await db.sequelize.models.plans.findByPk(req.body.plan_id);
-
-  const order = await razorpay.orders.create({
-    amount: plan.price,
-    currency: "INR",
-    receipt: `receipt_${Date.now()}`
-  });
-
-  res.json(order);
+exports.getSubscription = async (req, res) => {
+  try {
+    const sub = await db.Subscription.findOne({ where: { user_id: req.user.id, status: "ACTIVE" }, include: [db.Plan] });
+    return res.json(sub || { status: "NONE" });
+  } catch { return res.status(500).json({ message: "Failed to fetch subscription" }); }
 };

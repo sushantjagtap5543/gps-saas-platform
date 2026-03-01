@@ -1,6 +1,6 @@
-FROM node:20
+FROM node:20-alpine
 WORKDIR /app
-COPY package.json .
-RUN npm install
-COPY worker.js .
+COPY package*.json ./
+RUN npm install --production
+COPY . .
 CMD ["node", "worker.js"]

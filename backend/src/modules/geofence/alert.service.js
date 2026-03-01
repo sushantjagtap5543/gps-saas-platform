@@ -1,19 +1,11 @@
 const db = require("../../models");
-const { getIO } = require("../../socket/socket");
+const { emitAlert } = require("../../socket/socket");
+const logger = require("../../utils/logger");
 
-exports.createAlert = async (device, type, message, lat, lng) => {
-
-  const alert = await db.Alert.create({
-    tenant_id: device.tenant_id,
-    device_id: device.id,
-    type,
-    message,
-    latitude: lat,
-    longitude: lng
-  });
-
-  const io = getIO();
-  io.to(device.tenant_id.toString()).emit("alert", alert);
-
-  return alert;
+exports.createAlert = async (device, type, message, lat, lng, severity = "INFO") => {
+  try {
+    const alert = await db.AlertEvent.create({ device_id: device.id, type, message, severity, latitude: lat, longitude: lng });
+    emitAlert(device.tenant_id, { id: alert.id, device_id: device.id, type, message, severity, latitude: lat, longitude: lng, timestamp: new Date() });
+    return alert;
+  } catch (err) { logger.error("[ALERT SERVICE] " + err.message); }
 };

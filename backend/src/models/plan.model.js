@@ -1,10 +1,9 @@
 const { DataTypes } = require("sequelize");
-
-module.exports = (sequelize) => {
-  return sequelize.define("plans", {
-    id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
-    name: DataTypes.STRING,
-    price: DataTypes.INTEGER, // in paise
-    duration_days: DataTypes.INTEGER
-  });
-};
+module.exports = (sequelize) => sequelize.define("plans", {
+  id:            { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
+  name:          { type: DataTypes.STRING, allowNull: false },
+  price:         { type: DataTypes.INTEGER, allowNull: false },
+  duration_days: { type: DataTypes.INTEGER, allowNull: false },
+  max_devices:   { type: DataTypes.INTEGER, defaultValue: 10 },
+  description:   DataTypes.TEXT
+}, { tableName: "plans", timestamps: true });

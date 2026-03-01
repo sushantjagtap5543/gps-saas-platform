@@ -1,5 +1,11 @@
 {
+  "name": "gps-notifications",
+  "version": "1.0.0",
+  "main": "worker.js",
+  "scripts": { "start": "node worker.js" },
   "dependencies": {
+    "dotenv": "^16.3.1",
+    "firebase-admin": "^11.11.0",
     "ioredis": "^5.3.2"
   }
 }

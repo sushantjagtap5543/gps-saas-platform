@@ -1,15 +1,8 @@
-const service = require("./branding.service");
+const db = require("../../models");
 
-exports.getBranding = async (req, res) => {
-  const domain = req.headers.host;
-  const branding = await service.getBrandingByDomain(domain);
-  res.json(branding);
-};
-
-exports.updateBranding = async (req, res) => {
-  const result = await service.updateBranding(
-    req.user.tenant_id,
-    req.body
-  );
-  res.json(result);
+exports.getBrandingByDomain = async (domain) => db.Branding.findOne({ where: { domain } });
+exports.getBrandingByTenant = async (tenantId) => db.Branding.findOne({ where: { tenant_id: tenantId } });
+exports.updateBranding = async (tenantId, data) => {
+  const [branding] = await db.Branding.upsert({ tenant_id: tenantId, ...data }, { returning: true });
+  return branding;
 };

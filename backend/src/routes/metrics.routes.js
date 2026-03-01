@@ -1,6 +1,11 @@
-const { apiRequests } = require("../monitoring/metrics");
+const router = require("express").Router();
+const { client } = require("../monitoring/metrics");
 
-module.exports = (req, res, next) => {
-  apiRequests.inc();
-  next();
-};
+router.get("/", async (req, res) => {
+  try {
+    res.set("Content-Type", client.register.contentType);
+    res.end(await client.register.metrics());
+  } catch (err) { res.status(500).end(err.message); }
+});
+
+module.exports = router;

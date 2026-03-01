@@ -1,11 +1,10 @@
-const router = require('express').Router();
-const jwt = require('jsonwebtoken');
+const router = require("express").Router();
+const controller = require("../controllers/auth.controller");
+const auth = require("../middleware/auth.middleware");
 
-router.post('/login', (req, res) => {
-  const { username } = req.body;
-
-  const token = jwt.sign({ username }, process.env.JWT_SECRET);
-  res.json({ token });
-});
+router.post("/register", controller.register);
+router.post("/login",    controller.login);
+router.post("/refresh",  controller.refresh);
+router.get("/me",        auth, controller.me);
 
 module.exports = router;

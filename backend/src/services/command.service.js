@@ -1,21 +1,10 @@
-async function executeLogicalCommand(deviceId, logicalName, userId) {
+const db    = require("../models");
+const redis = require("../config/redis");
 
-    const device = await Device.findByPk(deviceId);
-    const commandMap = await DeviceCommandMap.findOne({
-        where: { model_id: device.model_id, logical_name: logicalName }
-    });
-
-    if (!commandMap) throw new Error("Command not supported");
-
-    const command = await CommandLog.create({
-        device_id: deviceId,
-        logical_name: logicalName,
-        actual_command: commandMap.actual_command,
-        status: "PENDING",
-        created_by: userId
-    });
-
-    await redisQueue.push(command);
-
-    return command;
-}
+exports.sendCommand = async (deviceId, commandText, userId) => {
+  const device = await db.Device.findByPk(deviceId);
+  if (!device) throw new Error("Device not found");
+  const command = await db.CommandLog.create({ device_id: deviceId, command_text: commandText, status: "PENDING" });
+  await redis.lpush("command_queue", JSON.stringify({ command_id: command.id, device_id: deviceId, imei: device.imei, command_text: commandText }));
+  return command;
+};

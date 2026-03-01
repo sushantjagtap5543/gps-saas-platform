@@ -1,6 +1,8 @@
 const { apiRequests } = require("../monitoring/metrics");
 
 module.exports = (req, res, next) => {
-  apiRequests.inc();
+  res.on("finish", () => {
+    apiRequests.inc({ method: req.method, route: req.route?.path || req.path, status: res.statusCode });
+  });
   next();
 };
