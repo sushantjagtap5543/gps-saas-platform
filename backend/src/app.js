@@ -3,29 +3,59 @@ const express       = require("express");
 const cors          = require("cors");
 const helmet        = require("helmet");
 const mongoSanitize = require("express-mongo-sanitize");
-const xss           = require("xss-clean");
 const rateLimit     = require("express-rate-limit");
 const morgan        = require("morgan");
 const logger        = require("./utils/logger");
 
 const app = express();
 
-app.use(helmet());
-app.use(cors({ origin: process.env.CORS_ORIGIN || "*", credentials: true }));
-app.use("/api/billing/webhook", express.raw({ type: "application/json" }));
-app.use(express.json({ limit: "10kb" }));
-app.use(express.urlencoded({ extended: true }));
-app.use(mongoSanitize());
-app.use(xss());
+// Security headers
+app.use(helmet({ contentSecurityPolicy: false }));
 
-const limiter = rateLimit({ windowMs: 15*60*1000, max: 200, standardHeaders: true, legacyHeaders: false });
-const authLimiter = rateLimit({ windowMs: 15*60*1000, max: 20 });
+// CORS
+app.use(cors({
+  origin: (process.env.CORS_ORIGIN || "*"),
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+}));
+
+// Raw body for Razorpay webhook MUST come before json()
+app.use("/api/billing/webhook", express.raw({ type: "application/json" }));
+
+// Body parsing
+app.use(express.json({ limit: "10kb" }));
+app.use(express.urlencoded({ extended: true, limit: "10kb" }));
+
+// Sanitise NoSQL injection
+app.use(mongoSanitize());
+
+// Rate limiting — BEFORE routes
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many requests, slow down." }
+});
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  message: { message: "Too many login attempts." }
+});
+
 app.use(limiter);
-app.use(morgan("combined", { stream: { write: (m) => logger.info(m.trim()) } }));
+
+// HTTP request logging
+app.use(morgan("combined", { stream: { write: (msg) => logger.info(msg.trim()) } }));
+
+// Prometheus request counter
 app.use(require("./middleware/requestCounter.middleware"));
 
-app.use("/health",        require("./routes/health.routes"));
-app.use("/metrics",       require("./routes/metrics.routes"));
+// Health & metrics (no auth)
+app.use("/health",  require("./routes/health.routes"));
+app.use("/metrics", require("./routes/metrics.routes"));
+
+// API routes
 app.use("/api/auth",      authLimiter, require("./routes/auth.routes"));
 app.use("/api/devices",   require("./routes/device.routes"));
 app.use("/api/billing",   require("./routes/billing.routes"));
@@ -36,9 +66,12 @@ app.use("/api/analytics", require("./routes/analytics.routes"));
 app.use("/api/commands",  require("./routes/command.routes"));
 app.use("/api/admin",     require("./routes/admin.routes"));
 
+// 404
 app.use((req, res) => res.status(404).json({ message: "Route not found" }));
+
+// Global error handler
 app.use((err, req, res, _next) => {
-  logger.error(err.message);
+  logger.error("[ERROR] " + err.message + " — " + req.method + " " + req.path);
   res.status(err.status || 500).json({ message: err.message || "Internal Server Error" });
 });
 
