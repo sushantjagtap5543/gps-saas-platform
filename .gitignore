@@ -1,29 +1,27 @@
-# Never commit these
+# SECRETS — never commit
 .env.production
 .env.local
 .env
-
-# Node modules
-node_modules/
-*/node_modules/
-
-# Build outputs
-*/dist/
-*/build/
-
-# Logs
-logs/
-*.log
-
-# SSL certificates
+*/serviceAccount.json
 nginx/ssl/
 
-# Firebase service account
-notifications/push/serviceAccount.json
+# Node
+node_modules/
+*/node_modules/
+npm-debug.log*
 
-# PDF invoices
-backend/invoices/
+# Build artifacts
+frontend/dist/
+gps-admin/dist/
+
+# Runtime
+logs/
+invoices/
+*.log
 
 # OS
 .DS_Store
 Thumbs.db
+
+# Docker
+docker-compose.override.yml

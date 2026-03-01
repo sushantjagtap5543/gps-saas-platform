@@ -1,38 +1,39 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import api from "../api/axios";
-import MapView from "../components/MapView";
-import socket from "../socket";
+
+const Stat = ({ label, value, color, to }) => (
+  <Link to={to} style={{ textDecoration:"none" }}>
+    <div style={{ background:"#1e293b", border:"1px solid #334155", borderRadius:"12px", padding:"24px", cursor:"pointer" }}>
+      <p style={{ color:"#64748b", fontSize:"13px", marginBottom:"8px" }}>{label}</p>
+      <p style={{ fontSize:"36px", fontWeight:"bold", color }}>{value ?? "–"}</p>
+    </div>
+  </Link>
+);
 
 export default function Dashboard() {
-  const [stats, setStats] = useState({ users:0, devices:0, activeSubs:0 });
-  const [vehicles, setVehicles] = useState([]);
+  const [stats, setStats]     = useState({});
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.get("/admin/stats").then(r => setStats(r.data)).catch(console.error);
-    api.get("/devices").then(r => {
-      setVehicles(r.data.filter(d => d.GpsLive).map(d => ({ ...d.GpsLive, vehicle_number: d.vehicle_number, imei: d.imei })));
-    }).catch(console.error);
-    socket.connect();
-    socket.on("location_update", data => setVehicles(prev => [...prev.filter(v => v.device_id !== data.device_id), data]));
-    return () => { socket.off("location_update"); socket.disconnect(); };
+    api.get("/admin/stats")
+      .then(r => setStats(r.data))
+      .catch(console.error)
+      .finally(() => setLoading(false));
   }, []);
 
-  const cards = [["Total Users", stats.users, "#3b82f6"], ["Total Devices", stats.devices, "#8b5cf6"], ["Active Subs", stats.activeSubs, "#16a34a"]];
-
   return (
-    <div style={{ padding:"24px" }}>
-      <h2 style={{ marginBottom:"20px" }}>Admin Dashboard</h2>
-      <div style={{ display:"flex", gap:"16px", marginBottom:"24px" }}>
-        {cards.map(([l, v, c]) => (
-          <div key={l} style={{ flex:1, background:"#fff", border:"1px solid #e2e8f0", borderRadius:"12px", padding:"20px" }}>
-            <p style={{ color:"#64748b", fontSize:"13px" }}>{l}</p>
-            <p style={{ fontSize:"32px", fontWeight:"bold", color:c }}>{v}</p>
-          </div>
-        ))}
-      </div>
-      <div style={{ height:"500px", borderRadius:"12px", overflow:"hidden", border:"1px solid #e2e8f0" }}>
-        <MapView vehicles={vehicles} />
-      </div>
+    <div style={{ padding:"24px", background:"#0f172a", minHeight:"100vh", color:"#f1f5f9" }}>
+      <h2 style={{ marginBottom:"24px", fontSize:"20px" }}>Admin Dashboard</h2>
+      {loading ? (
+        <p style={{ color:"#64748b" }}>Loading stats…</p>
+      ) : (
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(200px, 1fr))", gap:"16px" }}>
+          <Stat label="Total Users"       value={stats.users}      color="#60a5fa" to="/users" />
+          <Stat label="Total Devices"     value={stats.devices}    color="#34d399" to="/devices" />
+          <Stat label="Active Subscriptions" value={stats.activeSubs} color="#a78bfa" to="/billing" />
+        </div>
+      )}
     </div>
   );
 }

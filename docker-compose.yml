@@ -1,15 +1,19 @@
+# GPS SaaS — Production Docker Compose
+# Usage: docker compose --env-file .env.production up -d
+
 services:
 
-  # ─── Infrastructure ───────────────────────────────────────────────────────
+  # ── PostgreSQL ─────────────────────────────────────────────────
   postgres:
     image: postgis/postgis:15-3.3
     container_name: gps_postgres
+    env_file: .env.production
     environment:
       POSTGRES_USER:     gpsuser
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB:       gpsdb
+      # POSTGRES_PASSWORD is read from env_file above
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
@@ -17,92 +21,142 @@ services:
       test: ["CMD-SHELL", "pg_isready -U gpsuser -d gpsdb"]
       interval: 10s
       timeout: 5s
-      retries: 10
-    restart: always
+      retries: 15
+      start_period: 30s
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
 
+  # ── Redis ──────────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
     container_name: gps_redis
-    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    command: >
+      redis-server
+      --maxmemory 100mb
+      --maxmemory-policy allkeys-lru
+      --save 900 1
     ports:
       - "127.0.0.1:6379:6379"
+    volumes:
+      - redisdata:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
-    restart: always
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options: { max-size: "5m", max-file: "3" }
 
-  # ─── Backend API ───────────────────────────────────────────────────────────
+  # ── Backend API ────────────────────────────────────────────────
   backend:
-    build: ./backend
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
     container_name: gps_backend
     env_file: .env.production
     environment:
+      NODE_ENV:          production
       POSTGRES_HOST:     postgres
-      POSTGRES_PORT:     5432
+      POSTGRES_PORT:     "5432"
       POSTGRES_DB:       gpsdb
       POSTGRES_USER:     gpsuser
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       REDIS_HOST:        redis
-      REDIS_PORT:        6379
+      REDIS_PORT:        "6379"
+      NODE_OPTIONS:      "--max-old-space-size=256"
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-    restart: always
+    expose:
+      - "3000"
+    volumes:
+      - backend_logs:/app/logs
+      - backend_invoices:/app/invoices
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "5" }
 
-  # ─── TCP GPS Device Server ─────────────────────────────────────────────────
+  # ── TCP Server (GPS Devices) ───────────────────────────────────
   tcp-server:
-    build: ./tcp-server
+    build:
+      context: ./tcp-server
+      dockerfile: Dockerfile
     container_name: gps_tcp_server
+    environment:
+      NODE_ENV:  production
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      TCP_PORT:   "5000"
     ports:
       - "5000:5000"
-    environment:
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
     depends_on:
       redis:
         condition: service_healthy
-    restart: always
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
 
-  # ─── Notification Worker ───────────────────────────────────────────────────
+  # ── Notification Worker ────────────────────────────────────────
   notifications:
-    build: ./notifications
+    build:
+      context: ./notifications
+      dockerfile: Dockerfile
     container_name: gps_notifications
+    env_file: .env.production
     environment:
-      REDIS_HOST:               redis
-      REDIS_PORT:               6379
-      FIREBASE_SERVICE_ACCOUNT: ${FIREBASE_SERVICE_ACCOUNT:-}
+      NODE_ENV:   production
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
     depends_on:
       redis:
         condition: service_healthy
-    restart: always
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options: { max-size: "5m", max-file: "2" }
 
-  # ─── Frontend (Customer Portal) ────────────────────────────────────────────
+  # ── Frontend (Customer Portal) ─────────────────────────────────
   frontend:
     build:
       context: ./frontend
+      dockerfile: Dockerfile
       args:
-        VITE_API_URL: /api
+        VITE_API_URL:    /api
         VITE_SOCKET_URL: /
     container_name: gps_frontend
-    restart: always
+    expose:
+      - "80"
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options: { max-size: "5m", max-file: "2" }
 
-  # ─── Admin Panel ───────────────────────────────────────────────────────────
+  # ── Admin Panel ────────────────────────────────────────────────
   gps-admin:
     build:
       context: ./gps-admin
+      dockerfile: Dockerfile
       args:
-        VITE_API_URL: /api
+        VITE_API_URL:    /api
         VITE_SOCKET_URL: /
     container_name: gps_admin
-    restart: always
+    expose:
+      - "80"
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options: { max-size: "5m", max-file: "2" }
 
-  # ─── Nginx Reverse Proxy ───────────────────────────────────────────────────
+  # ── Nginx Reverse Proxy ────────────────────────────────────────
   nginx:
-    image: nginx:stable-alpine
+    image: nginx:1.25-alpine
     container_name: gps_nginx
     ports:
       - "80:80"
@@ -110,12 +164,19 @@ services:
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/ssl:/etc/nginx/ssl:ro
-      - /var/www/certbot:/var/www/certbot:ro
+      - certbot_www:/var/www/certbot:ro
     depends_on:
       - backend
       - frontend
       - gps-admin
-    restart: always
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
 
 volumes:
   pgdata:
+  redisdata:
+  backend_logs:
+  backend_invoices:
+  certbot_www:

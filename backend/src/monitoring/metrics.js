@@ -13,8 +13,8 @@ const tcpConnections = new client.Gauge({
 });
 
 const apiRequests = new client.Counter({
-  name: "gps_api_requests_total",
-  help: "Total API requests",
+  name:       "gps_api_requests_total",
+  help:       "Total API requests",
   labelNames: ["method", "route", "status"]
 });
 
