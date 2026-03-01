@@ -1,93 +1,107 @@
 #!/bin/bash
-# ══════════════════════════════════════════════════
-#  GPS SaaS — Fix & Restart Script
-#  Run this on your Lightsail server:
-#  chmod +x scripts/fix-and-restart.sh && ./scripts/fix-and-restart.sh
-# ══════════════════════════════════════════════════
+# GPS SaaS — Fix & Restart Script (compatible with Docker v1 & v2)
 set -e
 
-echo ""
-echo "════════════════════════════════════════"
-echo "  GPS SaaS — Applying fixes & restarting"
-echo "════════════════════════════════════════"
-echo ""
-
-# Step 1: Stop everything cleanly
-echo "→ Stopping all containers..."
-docker compose down --remove-orphans 2>/dev/null || true
-
-# Step 2: Remove old unhealthy images so they rebuild fresh
-echo "→ Removing old backend image..."
-docker rmi $(docker images | grep 'backend' | awk '{print $3}') 2>/dev/null || true
-
-# Step 3: Check .env has been edited
-if grep -q "CHANGE_ME" .env.production 2>/dev/null || grep -q "CHANGE_ME" .env 2>/dev/null; then
-  echo ""
-  echo "⚠️  WARNING: Your .env file still has placeholder values!"
-  echo "   Edit it now: nano .env.production"
-  echo "   Then re-run this script."
-  echo ""
+# Detect compose command
+if docker compose version >/dev/null 2>&1; then
+  DC="docker compose"
+elif docker-compose version >/dev/null 2>&1; then
+  DC="docker-compose"
+else
+  echo "Installing docker-compose plugin..."
+  sudo apt-get install -y docker-compose-plugin
+  DC="docker compose"
 fi
 
-# Step 4: Build backend fresh (no cache)
-echo "→ Rebuilding backend (fresh)..."
-docker compose build --no-cache backend
+echo "Using compose: $DC"
+echo ""
+echo "================================================"
+echo "  GPS SaaS — Fix & Restart"
+echo "================================================"
 
-# Step 5: Build other services
+# Stop everything
+echo "→ Stopping all containers..."
+$DC down --remove-orphans 2>/dev/null || true
+
+# Check env file
+ENVFILE=".env.production"
+[ -f ".env" ] && ENVFILE=".env"
+
+echo "→ Using env file: $ENVFILE"
+
+# Check for placeholder JWT secret
+if grep -q "5e884898\|CHANGE_ME" $ENVFILE 2>/dev/null; then
+  echo ""
+  echo "⚠️  JWT_SECRET is still the default placeholder value!"
+  echo "   Generating new JWT secrets automatically..."
+  echo ""
+  # Generate new secrets using openssl (always available)
+  JWT=$(openssl rand -hex 64)
+  REFRESH=$(openssl rand -hex 64)
+  # Replace in env file
+  sed -i "s|^JWT_SECRET=.*|JWT_SECRET=$JWT|" $ENVFILE
+  sed -i "s|^JWT_REFRESH_SECRET=.*|JWT_REFRESH_SECRET=$REFRESH|" $ENVFILE
+  echo "✅  JWT secrets regenerated"
+fi
+
+# Build fresh
+echo "→ Building backend (no cache)..."
+$DC build --no-cache backend
+
 echo "→ Building other services..."
-docker compose build --no-cache frontend gps-admin tcp-server notifications
+$DC build frontend gps-admin tcp-server notifications 2>/dev/null || true
 
-# Step 6: Start DB and Redis first, wait for them
-echo "→ Starting database and Redis..."
-docker compose up -d postgres redis
+# Start DB and Redis first
+echo "→ Starting postgres and redis..."
+$DC up -d postgres redis
 
-echo "→ Waiting for PostgreSQL to be ready (up to 60s)..."
-for i in $(seq 1 12); do
-  if docker compose exec -T postgres pg_isready -U gpsuser -d gpsdb >/dev/null 2>&1; then
-    echo "   ✅ PostgreSQL is ready"
+# Wait for postgres
+echo "→ Waiting for PostgreSQL..."
+for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
+  if $DC exec -T postgres pg_isready -U gpsuser -d gpsdb >/dev/null 2>&1; then
+    echo "   ✅ PostgreSQL ready"
     break
   fi
-  echo "   Waiting... ($i/12)"
+  echo "   Waiting ($i/12)..."
   sleep 5
 done
 
-echo "→ Waiting for Redis..."
+# Wait for redis
 sleep 3
-docker compose exec -T redis redis-cli ping >/dev/null && echo "   ✅ Redis is ready"
+$DC exec -T redis redis-cli ping >/dev/null 2>&1 && echo "   ✅ Redis ready" || echo "   ⚠️  Redis not responding"
 
-# Step 7: Start everything
+# Start all
 echo "→ Starting all services..."
-docker compose up -d
+$DC up -d
 
-# Step 8: Watch backend logs for 30 seconds
+# Watch logs 30s
 echo ""
 echo "→ Backend startup logs (30s):"
-echo "────────────────────────────"
-timeout 30 docker compose logs -f backend 2>/dev/null || true
-echo "────────────────────────────"
+echo "----------------------------------------"
+timeout 30 $DC logs -f backend 2>/dev/null || true
+echo "----------------------------------------"
 
-# Step 9: Status check
 echo ""
 echo "→ Container status:"
-docker compose ps
+$DC ps
 
-# Step 10: Health check
 echo ""
-echo "→ Testing health endpoint..."
+echo "→ Testing health..."
 sleep 5
 if curl -sf http://localhost:3000/health >/dev/null 2>&1; then
-  echo "   ✅ Backend is HEALTHY at http://localhost:3000/health"
+  echo "✅ Backend HEALTHY"
   curl -s http://localhost:3000/health
+elif wget -qO- http://localhost:3000/health >/dev/null 2>&1; then
+  echo "✅ Backend HEALTHY"
+  wget -qO- http://localhost:3000/health
 else
-  echo "   ⚠️  Health check not responding yet — check logs:"
-  echo "   docker compose logs backend --tail=50"
+  echo "⚠️  Not responding yet — check: $DC logs backend"
 fi
 
 echo ""
-echo "════════════════════════════════════════"
-echo "  Done! Useful commands:"
-echo "  docker compose ps                    — check status"
-echo "  docker compose logs backend -f       — watch logs"
-echo "  docker compose logs nginx -f         — nginx logs"
-echo "  curl http://localhost:3000/health    — health check"
-echo "════════════════════════════════════════"
+echo "================================================"
+echo "  Commands:"
+echo "  $DC ps                    → status"
+echo "  $DC logs backend -f       → watch logs"
+echo "  curl http://localhost:3000/health → health"
+echo "================================================"
