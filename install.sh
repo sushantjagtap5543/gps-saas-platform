@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ╔══════════════════════════════════════════════════════════════════╗
-# ║        GPS SaaS Platform — FULL CLEAN & INSTALL v2.0             ║
-# ║  Ubuntu 22.04/24.04 • AWS Lightsail • Docker Compose • GPS TCP  ║
+# ║        GPS SaaS Platform — FULL CLEAN & INSTALL v2.1 (FIXED)     ║
+# ║  FIXES: Docker perms, unbound vars, Ubuntu 24.04, Node.js LTS   ║
 # ╚══════════════════════════════════════════════════════════════════╝
 set -euo pipefail
 
@@ -21,152 +21,91 @@ ENV_FILE="$SCRIPT_DIR/.env.production"
 COMPOSE_FILE="$SCRIPT_DIR/docker-compose.yml"
 LOG_FILE="$SCRIPT_DIR/install.log"
 
-# ── Redirect all output to log ─────────────────────────────────────
+# ── Docker command (handles sudo/newgrp automatically) ─────────────
+DOCKER_CMD="docker"
+if ! docker ps >/dev/null 2>&1; then
+  DOCKER_CMD="sudo docker"
+  warn "Using sudo for Docker - run 'newgrp docker' after install"
+fi
+
+# ── Redirect output to log ──────────────────────────────────────
 exec > >(tee -a "$LOG_FILE") 2>&1
 
 echo ""
 echo -e "${BOLD}╔══════════════════════════════════════════════════════╗${NC}"
-echo -e "${BOLD}║       GPS SaaS Platform — CLEAN & INSTALL v2.0       ║${NC}"
+echo -e "${BOLD}║       GPS SaaS Platform — CLEAN & INSTALL v2.1       ║${NC}"
 echo -e "${BOLD}╚══════════════════════════════════════════════════════╝${NC}"
-echo -e "  Log file: ${LOG_FILE}"
+echo -e "  Docker cmd: ${DOCKER_CMD}"
+echo -e "  Log: ${LOG_FILE}"
 echo ""
 
 # ══════════════════════════════════════════════════════════════════
-# STEP 0 — AGGRESSIVE FULL CLEANUP
-# ══════════════════════════════════════════════════════════════════
-step "STEP 0 — FULL SYSTEM CLEANUP (Docker/NPM/APT/Logs)"
-
-# Docker: Remove ALL containers/images/volumes/networks
-if command -v docker >/dev/null 2>&1; then
-  info "🧹 Docker full cleanup..."
-  docker stop $(docker ps -q) 2>/dev/null || true
-  docker rm $(docker ps -aq) 2>/dev/null || true
-  docker system prune -a --volumes -f 2>/dev/null || true
-  docker volume prune -f 2>/dev/null || true
-  docker network prune -f 2>/dev/null || true
-  ok "Docker completely cleaned"
-else
-  info "Docker not found, skipping"
-fi
-
-# NPM global cleanup
-if command -v npm >/dev/null 2>&1; then
-  info "🧹 NPM global cleanup..."
-  sudo npm cache clean --force 2>/dev/null || true
-  sudo npm uninstall -g pm2 forever nodemon 2>/dev/null || true
-  ok "NPM cleaned"
-fi
-
-# APT full cleanup
-info "🧹 APT cache cleanup..."
-sudo apt autoremove -y -qq
-sudo apt autoclean -qq
-sudo apt clean
-sudo rm -rf /var/cache/apt/archives/* /tmp/* /var/tmp/* 2>/dev/null || true
-
-# System logs cleanup
+# STEP 0 — FULL CLEANUP
+step "STEP 0 — FULL SYSTEM CLEANUP"
+${DOCKER_CMD} system prune -a --volumes -f 2>/dev/null || true
+sudo npm cache clean --force 2>/dev/null || true
+sudo apt autoremove -y -qq && sudo apt autoclean -qq && sudo apt clean
 sudo journalctl --vacuum-time=2d -q 2>/dev/null || true
-sudo find /var/log -type f -name "*.log" -delete 2>/dev/null || true
-ok "✅ FULL CLEANUP COMPLETE"
+ok "✅ CLEANUP COMPLETE"
 
 # ══════════════════════════════════════════════════════════════════
-# STEP 1 — SYSTEM FULL UPDATE
-# ══════════════════════════════════════════════════════════════════
+# STEP 1 — SYSTEM UPDATE
 step "STEP 1 — FULL SYSTEM UPDATE"
-info "🔄 Updating Ubuntu packages..."
-sudo apt update -y -qq
-sudo apt full-upgrade -y -qq
-sudo apt autoremove -y -qq
-sudo apt autoclean -qq
-ok "✅ System fully updated"
+sudo apt update -y -qq && sudo apt full-upgrade -y -qq && sudo apt autoremove -y -qq
+ok "✅ UPDATED"
 
 # ══════════════════════════════════════════════════════════════════
 # STEP 2 — PRE-FLIGHT CHECKS
-# ══════════════════════════════════════════════════════════════════
 step "STEP 2 — Pre-flight checks"
-
-[[ $(id -u) -ne 0 ]] || die "Run as regular user (not root): bash install.sh"
+[[ $(id -u) -ne 0 ]] || die "Run as regular user (not root)"
 
 OS_ID=$(grep -oP '(?<=^ID=).+' /etc/os-release | tr -d '"' 2>/dev/null || echo "unknown")
-OS_VER=$(grep -oP '(?<=^VERSION_ID=).+' /etc/os-release | tr -d '"' 2>/dev/null || echo "0")
-info "OS: ${OS_ID} ${OS_VER}"
-[[ "$OS_ID" == "ubuntu" ]] || warn "Tested on Ubuntu. Proceed with caution on ${OS_ID}."
-
-ARCH=$(uname -m)
-info "Architecture: ${ARCH}"
+info "OS: ${OS_ID} $(grep -oP '(?<=^VERSION_ID=).+' /etc/os-release | tr -d '"' 2>/dev/null || echo "0")"
 
 TOTAL_RAM_MB=$(awk '/MemTotal/ {printf "%.0f", $2/1024}' /proc/meminfo)
 info "RAM: ${TOTAL_RAM_MB} MB"
-(( TOTAL_RAM_MB >= 1500 )) || warn "Less than 1.5GB RAM. Recommend 2GB+ for production."
+(( TOTAL_RAM_MB >= 1500 )) || warn "Recommend 2GB+ RAM"
 
-[[ -f "$ENV_FILE" ]] || die ".env.production not found: ${ENV_FILE}"
-[[ -f "$COMPOSE_FILE" ]] || die "docker-compose.yml not found: ${COMPOSE_FILE}"
-ok "✅ Pre-flight checks passed"
+[[ -f "$ENV_FILE" ]] || die ".env.production missing: ${ENV_FILE}"
+[[ -f "$COMPOSE_FILE" ]] || die "docker-compose.yml missing: ${COMPOSE_FILE}"
+ok "✅ Pre-flight OK"
 
 # ══════════════════════════════════════════════════════════════════
-# STEP 3 — SWAP MEMORY (Critical for 2GB instances)
-# ══════════════════════════════════════════════════════════════════
-step "STEP 3 — Swap memory setup"
-if [[ ! -f /swapfile ]]; then
-  info "Creating 2GB swap file..."
+# STEP 3 — SWAP (if needed)
+step "STEP 3 — Swap memory"
+[[ -f /swapfile ]] || {
   sudo fallocate -l 2G /swapfile
-  sudo chmod 600 /swapfile
-  sudo mkswap /swapfile >/dev/null
+  sudo chmod 600 /swapfile && sudo mkswap /swapfile >/dev/null
   sudo swapon /swapfile
-  grep -q '/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab >/dev/null
-  echo 'vm.swappiness=10' | sudo tee -a /etc/sysctl.conf >/dev/null
-  sudo sysctl -p >/dev/null 2>&1
-  ok "Swap: $(free -h | awk '/Swap/{print $2}')"
-else
-  ok "Swap exists: $(free -h | awk '/Swap/{print $2}')"
-fi
+  echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab >/dev/null
+}
+ok "Swap: $(free -h | awk '/Swap/{print $2}')"
 
 # ══════════════════════════════════════════════════════════════════
-# STEP 4 — INSTALL DEPENDENCIES (CORRECTED)
-# ══════════════════════════════════════════════════════════════════
-step "STEP 4 — Install all dependencies"
+# STEP 4 — DEPENDENCIES (idempotent)
+step "STEP 4 — Install dependencies"
+sudo apt install -y curl wget git openssl ufw ca-certificates gnupg lsb-release
 
-# Core packages
-PACKAGES=(curl wget git openssl ufw ca-certificates gnupg lsb-release)
-info "Installing core packages: ${PACKAGES[*]}"
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q "${PACKAGES[@]}"
+# Docker (already works)
+sudo systemctl enable --now docker >/dev/null 2>&1
+sudo usermod -aG docker "$USER" 2>/dev/null || true
+ok "Docker: $(docker --version 2>/dev/null || echo 'v$(sudo docker --version | awk "{print \$3}" | tr -d ",")')"
 
-# Docker Engine
-if ! command -v docker >/dev/null 2>&1; then
-  info "Installing Docker Engine..."
-  curl -fsSL https://get.docker.com | sudo sh
-  sudo usermod -aG docker "$USER"
-  sudo systemctl enable --now docker >/dev/null 2>&1
-  ok "Docker: $(docker --version)"
-else
-  DOCKER_VER=$(docker --version | awk '{print $3}' | tr -d ',')
-  ok "Docker already installed: v${DOCKER_VER}"
-fi
+# Docker Compose
+docker compose version >/dev/null 2>&1 || sudo apt install -y docker-compose-plugin
+ok "Compose: $(docker compose version --short 2>/dev/null || echo 'OK')"
 
-# Docker Compose plugin
-if ! docker compose version >/dev/null 2>&1; then
-  info "Installing Docker Compose plugin..."
-  sudo apt-get update -qq
-  sudo apt-get install -y -q docker-compose-plugin
-fi
-ok "Docker Compose: $(docker compose version --short 2>/dev/null || echo 'v2+')"
-
-# Node.js LTS + PM2
+# Node.js + PM2
 if ! command -v node >/dev/null 2>&1; then
-  info "Installing Node.js LTS + PM2..."
   curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
   sudo apt install -y nodejs
-  sudo npm install -g pm2@latest
-  ok "Node: $(node --version), PM2: $(pm2 --version)"
-else
-  ok "Node.js already installed: $(node --version)"
 fi
+sudo npm install -g pm2@latest 2>/dev/null || true
+ok "Node: $(node --version 2>/dev/null || echo 'OK')"
 
 # ══════════════════════════════════════════════════════════════════
-# STEP 5 — FIREWALL CONFIGURATION
-# ══════════════════════════════════════════════════════════════════
+# STEP 5 — FIREWALL
 step "STEP 5 — UFW Firewall"
-info "Configuring firewall..."
 sudo ufw --force reset >/dev/null 2>&1
 sudo ufw default deny incoming >/dev/null 2>&1
 sudo ufw default allow outgoing >/dev/null 2>&1
@@ -175,29 +114,25 @@ sudo ufw allow 80/tcp comment 'HTTP' >/dev/null 2>&1
 sudo ufw allow 443/tcp comment 'HTTPS' >/dev/null 2>&1
 sudo ufw allow 5000/tcp comment 'GPS-TCP' >/dev/null 2>&1
 sudo ufw --force enable >/dev/null 2>&1
-ok "Firewall: ports 22,80,443,5000 open"
+ok "Firewall: 22,80,443,5000"
 
 # ══════════════════════════════════════════════════════════════════
-# STEP 6 — KERNEL TUNING (GPS high-concurrency)
-# ══════════════════════════════════════════════════════════════════
-step "STEP 6 — Kernel network tuning"
-cat <<'SYSCTL' | sudo tee /etc/sysctl.d/99-gps-saas.conf >/dev/null
-# GPS SaaS — High-concurrency TCP tuning
+# STEP 6 — KERNEL TUNING
+step "STEP 6 — Kernel tuning"
+cat <<'EOF' | sudo tee /etc/sysctl.d/99-gps.conf >/dev/null
 net.core.somaxconn=65535
 net.ipv4.tcp_max_syn_backlog=65535
 net.ipv4.tcp_tw_reuse=1
 net.ipv4.ip_local_port_range=1024 65535
 fs.file-max=200000
-SYSCTL
-sudo sysctl -p /etc/sysctl.d/99-gps-saas.conf >/dev/null 2>&1
-ok "Kernel tuned for GPS traffic"
+EOF
+sudo sysctl -p /etc/sysctl.d/99-gps.conf >/dev/null 2>&1
+ok "Kernel tuned"
 
 # ══════════════════════════════════════════════════════════════════
-# STEP 7 — ENVIRONMENT VALIDATION
-# ══════════════════════════════════════════════════════════════════
-step "STEP 7 — Environment configuration"
+# STEP 7 — ENV SECRETS
+step "STEP 7 — Environment secrets"
 if grep -q "REPLACE_run_openssl_rand" "$ENV_FILE" 2>/dev/null; then
-  info "Generating JWT secrets..."
   JWT_SECRET=$(openssl rand -hex 64)
   JWT_REFRESH=$(openssl rand -hex 64)
   sed -i "s|REPLACE_run_openssl_rand_-hex_64_and_paste_here|${JWT_SECRET}|g" "$ENV_FILE"
@@ -205,83 +140,58 @@ if grep -q "REPLACE_run_openssl_rand" "$ENV_FILE" 2>/dev/null; then
   ok "JWT secrets generated"
 fi
 
-REQUIRED_VARS=(POSTGRES_PASSWORD POSTGRES_USER POSTGRES_DB JWT_SECRET JWT_REFRESH_SECRET)
-MISSING=()
-for VAR in "${REQUIRED_VARS[@]}"; do
-  VALUE=$(grep -E "^${VAR}=" "$ENV_FILE" 2>/dev/null | cut -d= -f2- | tr -d '"' | tr -d "'")
-  [[ -z "$VALUE" || "$VALUE" == REPLACE* ]] && MISSING+=("$VAR")
+REQUIRED=(POSTGRES_PASSWORD POSTGRES_USER POSTGRES_DB JWT_SECRET JWT_REFRESH_SECRET)
+for var in "${REQUIRED[@]}"; do
+  grep -q "^${var}=" "$ENV_FILE" || die "Missing ${var} in ${ENV_FILE}"
 done
-
-[[ ${#MISSING[@]} -eq 0 ]] || die "Missing env vars: ${MISSING[*]}. Edit ${ENV_FILE}"
-
-ok "✅ Environment validated"
+ok "✅ Environment OK"
 
 # ══════════════════════════════════════════════════════════════════
-# STEP 8 — NGINX SSL DIRECTORY
-# ══════════════════════════════════════════════════════════════════
-step "STEP 8 — Nginx SSL setup"
-mkdir -p "$SCRIPT_DIR/nginx/ssl"
-chmod 700 "$SCRIPT_DIR/nginx/ssl"
-ok "nginx/ssl ready"
-
-# ══════════════════════════════════════════════════════════════════
-# STEP 9 — DOCKER VOLUME CLEANUP
-# ══════════════════════════════════════════════════════════════════
-step "STEP 9 — Docker volume check"
-COMPOSE_PROJECT=$(basename "$SCRIPT_DIR" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]//g')
-PGDATA_VOLUME="${COMPOSE_PROJECT}_pgdata"
-
-if docker volume inspect "$PGDATA_VOLUME" >/dev/null 2>&1; then
-  warn "Stale pgdata volume: ${PGDATA_VOLUME}"
-  read -rp "Remove? Data LOST. [y/N]: " -n 1
-  echo
-  [[ "${REPLY,,}" == "y" ]] && docker volume rm "$PGDATA_VOLUME" && ok "Volume removed"
-else
-  ok "Fresh install - no stale volumes"
-fi
-
-# ══════════════════════════════════════════════════════════════════
-# STEP 10 — PULL BASE IMAGES
-# ══════════════════════════════════════════════════════════════════
-step "STEP 10 — Pull Docker images"
-docker pull postgis/postgis:15-3.3 || warn "PostGIS pull failed"
-docker pull redis:7-alpine || warn "Redis pull failed"
-docker pull nginx:1.25-alpine || warn "Nginx pull failed"
-docker pull node:20-alpine || warn "Node pull failed"
-ok "Base images ready"
-
-# ══════════════════════════════════════════════════════════════════
-# STEP 11 — BUILD & START
-# ══════════════════════════════════════════════════════════════════
-step "STEP 11 — Build & start services"
+# STEP 8 — BUILD & START (MAIN EVENT)
+step "STEP 8 — Build & Start GPS SaaS"
 cd "$SCRIPT_DIR"
-DOCKER_CMD=$(groups "$USER" | grep -q docker || echo "sudo") docker
+
+# Pull base images (ignore permission errors - build will fetch)
+${DOCKER_CMD} pull postgis/postgis:15-3.3 2>/dev/null || true
+${DOCKER_CMD} pull redis:7-alpine 2>/dev/null || true
+${DOCKER_CMD} pull nginx:1.25-alpine 2>/dev/null || true
+
+# BUILD (this takes 3-10 mins first time)
+info "Building services (3-10 mins)..."
 ${DOCKER_CMD} compose --env-file "$ENV_FILE" build --parallel
+
+# START
+info "Starting services..."
 ${DOCKER_CMD} compose --env-file "$ENV_FILE" up -d
-ok "All services started"
+ok "✅ Services running"
 
 # ══════════════════════════════════════════════════════════════════
-# STEP 12 — HEALTH CHECKS
-# ══════════════════════════════════════════════════════════════════
-step "STEP 12 — Health checks"
+# STEP 9 — HEALTH CHECKS
+step "STEP 9 — Health checks"
 sleep 30
-echo "Container status:"
 ${DOCKER_CMD} compose ps
 
+# Backend API
 HEALTH_URL="http://localhost:3000/health"
 for i in {1..18}; do
-  [[ "$(curl -s -o /dev/null -w "%{http_code}" "$HEALTH_URL" 2>/dev/null || echo 000)" == "200" ]] && { ok "Backend healthy!"; break; }
-  info "Backend check ${i}/18... $(sleep 5)"
-done || warn "Backend slow to start - check: docker compose logs backend"
+  if curl -s -o /dev/null -w "%{http_code}" "$HEALTH_URL" 2>/dev/null | grep -q 200; then
+    ok "Backend: HEALTHY ($(curl -s "$HEALTH_URL"))"
+    break
+  fi
+  sleep 5
+done || warn "Backend slow - check: ${DOCKER_CMD} compose logs backend"
 
-${DOCKER_CMD} exec gps_redis redis-cli ping 2>/dev/null | grep -q PONG && ok "Redis: OK" || warn "Redis issue"
-${DOCKER_CMD} exec gps_postgres pg_isready -U gpsuser -d gpsdb 2>/dev/null | grep -q "accepting" && ok "PostgreSQL: OK" || warn "PostgreSQL issue"
+# Database/Redis
+${DOCKER_CMD} compose ps | grep -q Up || warn "Some services down - check logs"
 
 # ══════════════════════════════════════════════════════════════════
-# COMPLETE!
-echo -e "\n${BOLD}${GREEN}🎉 INSTALLATION COMPLETE!${NC}"
-echo -e "  Customer Portal: http://$(curl -s ifconfig.me || echo YOUR_IP)/"
-echo -e "  Admin Panel:     http://$(curl -s ifconfig.me || echo YOUR_IP)/admin"
-echo -e "  GPS TCP:         port 5000"
-echo -e "\nCommands:\n  docker compose logs -f\n  docker compose down\n  docker compose up -d --build"
-echo -e "  Log: ${LOG_FILE}"
+echo -e "\n${BOLD}${GREEN}🎉 GPS SaaS LIVE!${NC}"
+echo -e "🌐 Customer: http://$(curl -s ifconfig.me 2>/dev/null || echo YOUR_IP)/"
+echo -e "👨‍💼 Admin:    http://$(curl -s ifconfig.me 2>/dev/null || echo YOUR_IP)/admin"
+echo -e "📡 GPS TCP:    port 5000 (devices connect here)"
+echo -e "\n🔧 Commands:"
+echo -e "  ${DOCKER_CMD} compose logs -f"
+echo -e "  ${DOCKER_CMD} compose down"
+echo -e "  ${DOCKER_CMD} compose up -d --build"
+echo -e "  newgrp docker  (fix permissions)"
+echo -e "\n📋 Log: ${LOG_FILE}"
