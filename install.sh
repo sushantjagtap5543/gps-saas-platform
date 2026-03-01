@@ -1,4 +1,121 @@
 #!/usr/bin/env bash
+
+# ╔══════════════════════════════════════════════════════════════════╗
+# ║        GPS SaaS Platform — Full Install & Start Script          ║
+# ║  MODIFIED: Clean Docker + deps first, then update & install     ║
+# ╚══════════════════════════════════════════════════════════════════╝
+set -euo pipefail
+
+# ── Colours ────────────────────────────────────────────────────────
+RED='\\033[0;31m'; GREEN='\\033[0;32m'; YELLOW='\\033[1;33m'
+CYAN='\\033[0;36m'; BOLD='\\033[1m'; NC='\\033[0m'
+
+ok()   { echo -e "${GREEN}  [✔]${NC} $*"; }
+info() { echo -e "${CYAN}  [→]${NC} $*"; }
+warn() { echo -e "${YELLOW}  [!]${NC} $*"; }
+die()  { echo -e "${RED}  [✘] FATAL:${NC} $*"; exit 1; }
+step() { echo -e "\\n${BOLD}${CYAN}━━━ $* ${NC}"; }
+
+# ── Paths ──────────────────────────────────────────────────────────
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENV_FILE="$SCRIPT_DIR/.env.production"
+COMPOSE_FILE="$SCRIPT_DIR/docker-compose.yml"
+LOG_FILE="$SCRIPT_DIR/install.log"
+
+# ── Redirect all output to log ─────────────────────────────────────
+exec > >(tee -a "$LOG_FILE") 2>&1
+
+echo ""
+echo -e "${BOLD}╔══════════════════════════════════════════════════════╗${NC}"
+echo -e "${BOLD}║       GPS SaaS Platform — CLEAN & INSTALL v1.1       ║${NC}"
+echo -e "${BOLD}╚══════════════════════════════════════════════════════╝${NC}"
+echo -e "  Log file: ${LOG_FILE}"
+echo ""
+
+# ══════════════════════════════════════════════════════════════════
+# STEP 0 — AGGRESSIVE CLEANUP (Docker, npm, apt cache, logs)
+# ══════════════════════════════════════════════════════════════════
+step "STEP 0 — FULL SYSTEM CLEANUP"
+
+# Docker full prune (ALL unused containers/images/volumes/networks)
+if command -v docker >/dev/null 2>&1; then
+  info "🧹 Docker cleanup..."
+  docker system prune -a --volumes -f 2>/dev/null || true
+  docker volume prune -f 2>/dev/null || true
+  docker network prune -f 2>/dev/null || true
+  docker image prune -a -f 2>/dev/null || true
+  ok "Docker fully cleaned"
+else
+  info "No Docker found, skipping"
+fi
+
+# NPM global cache/pkgs cleanup
+if command -v npm >/dev/null 2>&1; then
+  info "🧹 NPM cleanup..."
+  sudo npm cache clean --force
+  sudo npm uninstall -g pm2 forever nodemon 2>/dev/null || true
+  ok "NPM cleaned"
+fi
+
+# APT cache cleanup
+info "🧹 APT cleanup..."
+sudo apt autoremove -y -q
+sudo apt autoclean
+sudo apt clean
+sudo rm -rf /var/cache/apt/archives/* /tmp/* 2>/dev/null || true
+
+# Logs cleanup
+sudo journalctl --vacuum-time=2d
+sudo find /var/log -name "*.log" -delete 2>/dev/null || true
+
+ok "✅ FULL CLEANUP COMPLETE"
+
+# ══════════════════════════════════════════════════════════════════
+# STEP 1 — SYSTEM UPDATE (full upgrade)
+# ══════════════════════════════════════════════════════════════════
+step "STEP 1 — FULL SYSTEM UPDATE"
+
+info "🔄 Updating ALL packages..."
+sudo apt update -y -qq
+sudo apt full-upgrade -y -qq
+sudo apt autoremove -y -qq
+ok "✅ System fully updated"
+
+# ══════════════════════════════════════════════════════════════════
+# STEP 2 — Pre-flight checks (your original)
+# ══════════════════════════════════════════════════════════════════
+step "STEP 2 — Pre-flight checks"
+# ... [keep your original STEP 0 code here unchanged] ...
+
+# ══════════════════════════════════════════════════════════════════
+# STEP 3 — Install DEPENDENCIES (corrected packages)
+# ══════════════════════════════════════════════════════════════════
+step "STEP 3 — Install REQUIRED PACKAGES"
+
+# Core system packages (NO pm2 here)
+PACKAGES=(curl wget git openssl ufw fail2ban ca-certificates gnupg lsb-release)
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q "${PACKAGES[@]}"
+
+# Docker Engine
+if ! command -v docker >/dev/null 2>&1; then
+  info "Installing Docker..."
+  curl -fsSL https://get.docker.com | sudo sh
+  sudo usermod -aG docker "$USER"
+  sudo systemctl enable --now docker
+fi
+
+# Docker Compose
+sudo apt-get install -y -q docker-compose-plugin
+
+# Node.js LTS + PM2 (CORRECT way)
+if ! command -v node >/dev/null 2>&1; then
+  info "Installing Node.js LTS..."
+  curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
+  sudo apt install -y nodejs
+  sudo npm install -g pm2@latest
+fi
+
+ok "✅ All dependencies installed"
 # ╔══════════════════════════════════════════════════════════════════╗
 # ║        GPS SaaS Platform — Full Install & Start Script          ║
 # ║                                                                  ║
