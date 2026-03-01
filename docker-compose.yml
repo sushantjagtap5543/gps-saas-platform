@@ -13,7 +13,7 @@ services:
       POSTGRES_DB:       gpsdb
       # Explicitly set here so Docker always passes it to the container,
       # regardless of env_file load order. Value is sourced from .env.production.
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: "StrongDBPass@2026!"
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
