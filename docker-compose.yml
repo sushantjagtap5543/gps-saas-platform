@@ -1,6 +1,7 @@
 version: "3.8"
 
 services:
+
   postgres:
     image: postgis/postgis:15-3.3
     restart: always
@@ -11,12 +12,12 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
-  healthcheck:
-    test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
-    interval: 10s
-    timeout: 5s
-    retries: 10
-    start_period: 30s
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
 
   redis:
     image: redis:7-alpine
@@ -32,7 +33,8 @@ services:
   backend:
     build: ./backend
     restart: always
-    env_file: .env.production
+    env_file:
+      - .env.production
     expose:
       - "3000"
     depends_on:
@@ -44,22 +46,28 @@ services:
       - backend_logs:/app/logs
       - backend_invoices:/app/invoices
     healthcheck:
-      test: "curl http://localhost:3000/health || exit 1"
-    
-      tcp-server:
-        build: ./tcp-server
-        restart: always
-        env_file: .env.production
-        expose:
-          - "5000"
-        depends_on:
-          redis:
-            condition: service_healthy
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/health || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  tcp-server:
+    build: ./tcp-server
+    restart: always
+    env_file:
+      - .env.production
+    expose:
+      - "5000"
+    depends_on:
+      redis:
+        condition: service_healthy
 
   notifications:
     build: ./notifications
     restart: always
-    env_file: .env.production
+    env_file:
+      - .env.production
     depends_on:
       redis:
         condition: service_healthy
@@ -117,8 +125,8 @@ services:
     ports:
       - "3001:3000"
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-ChangeMe123}
-      - GF_USERS_ALLOW_SIGN_UP=false
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-ChangeMe123}
+      GF_USERS_ALLOW_SIGN_UP: "false"
     volumes:
       - grafana_data:/var/lib/grafana
     depends_on:
