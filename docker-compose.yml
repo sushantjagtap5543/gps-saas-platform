@@ -1,140 +1,57 @@
-version: "3.8"
-
 services:
-
   postgres:
     image: postgis/postgis:15-3.3
-    restart: always
+    container_name: gps_postgres
     environment:
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_USER: gpsuser
+      POSTGRES_PASSWORD: ChangeThisRedisPassword456!@#
+      POSTGRES_DB: gpsdb
+    ports:
+      - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 30s
+    restart: always
 
   redis:
-    image: redis:7-alpine
+    image: redis:alpine
+    container_name: gps_redis
+    ports:
+      - "6379:6379"
     restart: always
-    command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-      start_period: 10s
-
-  backend:
-    build: ./backend
-    restart: always
-    env_file:
-      - .env.production
-    expose:
-      - "3000"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    volumes:
-      - backend_logs:/app/logs
-      - backend_invoices:/app/invoices
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:3000/health || exit 1"]
-      interval: 20s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
 
   tcp-server:
     build: ./tcp-server
-    restart: always
-    env_file:
-      - .env.production
-    expose:
-      - "5000"
-    depends_on:
-      redis:
-        condition: service_healthy
-
-  notifications:
-    build: ./notifications
-    restart: always
-    env_file:
-      - .env.production
-    depends_on:
-      redis:
-        condition: service_healthy
-
-  frontend:
-    build:
-      context: ./frontend
-      args:
-        VITE_API_URL: /api
-        VITE_SOCKET_URL: /
-    restart: always
-    expose:
-      - "80"
-
-  gps-admin:
-    build:
-      context: ./gps-admin
-      args:
-        VITE_API_URL: /api
-    restart: always
-    expose:
-      - "80"
-
-  nginx:
-    image: nginx:stable-alpine
-    restart: always
+    container_name: gps_tcp_server
     ports:
-      - "80:80"
-      - "443:443"
       - "5000:5000"
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/ssl:/etc/nginx/ssl:ro
-    depends_on:
-      - frontend
-      - gps-admin
-      - backend
-
-  prometheus:
-    image: prom/prometheus:latest
-    restart: always
-    volumes:
-      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - prometheus_data:/prometheus
-    expose:
-      - "9090"
-    command:
-      - "--config.file=/etc/prometheus/prometheus.yml"
-      - "--storage.tsdb.path=/prometheus"
-      - "--storage.tsdb.retention.time=30d"
-
-  grafana:
-    image: grafana/grafana:latest
-    restart: always
-    ports:
-      - "3001:3000"
     environment:
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-ChangeMe123}
-      GF_USERS_ALLOW_SIGN_UP: "false"
-    volumes:
-      - grafana_data:/var/lib/grafana
+      - DB_HOST=postgres
+      - DB_USER=gpsuser
+      - DB_PASSWORD=ChangeThisRedisPassword456!@#
+      - DB_NAME=gpsdb
+      - REDIS_HOST=redis
     depends_on:
-      - prometheus
+      - postgres
+      - redis
+    restart: always
+
+  backend:
+    build: ./backend
+    container_name: gps_backend
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.production
+    environment:
+      - DB_HOST=postgres
+      - DB_USER=gpsuser
+      - DB_PASSWORD=ChangeThisRedisPassword456!@#
+      - DB_NAME=gpsdb
+      - REDIS_HOST=redis
+    depends_on:
+      - postgres
+      - redis
+    restart: always
 
 volumes:
   pgdata:
-  backend_logs:
-  backend_invoices:
-  prometheus_data:
-  grafana_data:
