@@ -1,26 +1,43 @@
 const router = require("express").Router();
-const auth = require("../middleware/auth.middleware");
-const commandService = require("../services/command.service");
-const db = require("../models");
+const { authenticate } = require("../middleware/auth.middleware");
+const { authorize }    = require("../middleware/rbac.middleware");
+const cmdSvc           = require("../services/command.service");
+const db               = require("../models");
+const { Op }           = require("sequelize");
 
-router.use(auth);
+router.use(authenticate);
 
-router.post("/:deviceId/send", async (req, res) => {
+router.post("/send", authorize(["ADMIN","SUPER_ADMIN","TECHNICIAN"]), async (req, res) => {
   try {
-    const { command } = req.body;
-    if (!command) return res.status(400).json({ message: "command required" });
-    const device = await db.Device.findOne({ where: { id: req.params.deviceId, tenant_id: req.user.id } });
-    if (!device) return res.status(404).json({ message: "Device not found" });
-    const log = await commandService.sendCommand(device.id, command, req.user.id);
-    return res.json(log);
-  } catch (err) { return res.status(500).json({ message: err.message }); }
+    const { deviceId, commandName, otpVerified } = req.body;
+    if (!deviceId || !commandName) return res.status(400).json({ message: "deviceId and commandName required" });
+    const cmd = await cmdSvc.sendCommand({ deviceId, commandName, issuedBy: req.user.id, otpVerified });
+    return res.status(201).json({ message: "Command queued", command: cmd });
+  } catch (err) {
+    return res.status(400).json({ message: err.message });
+  }
 });
 
-router.get("/:deviceId/logs", async (req, res) => {
+router.get("/device/:deviceId", async (req, res) => {
   try {
-    const logs = await db.CommandLog.findAll({ where: { device_id: req.params.deviceId }, order: [["createdAt","DESC"]], limit: 50 });
-    return res.json(logs);
-  } catch { return res.status(500).json({ message: "Failed to fetch logs" }); }
+    const { page = 1, limit = 20 } = req.query;
+    const { count, rows } = await db.CommandQueue.findAndCountAll({
+      where: { device_id: req.params.deviceId },
+      order: [["createdAt","DESC"]],
+      limit: parseInt(limit),
+      offset: (parseInt(page) - 1) * parseInt(limit)
+    });
+    return res.json({ total: count, commands: rows });
+  } catch { return res.status(500).json({ message: "Failed" }); }
+});
+
+router.delete("/:id/cancel", authorize(["ADMIN","SUPER_ADMIN"]), async (req, res) => {
+  try {
+    const cmd = await db.CommandQueue.findByPk(req.params.id);
+    if (!cmd || cmd.status !== "PENDING") return res.status(400).json({ message: "Command cannot be cancelled" });
+    await cmd.update({ status: "CANCELLED" });
+    return res.json({ message: "Command cancelled" });
+  } catch { return res.status(500).json({ message: "Failed" }); }
 });
 
 module.exports = router;

@@ -1,14 +1,23 @@
 {
-  "name": "gps-frontend",
-  "version": "1.0.0",
+  "name": "gps-tracking-frontend",
+  "version": "2.0.0",
   "private": true,
-  "scripts": { "dev": "vite", "build": "vite build", "preview": "vite preview" },
+  "scripts": {
+    "dev":   "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
   "dependencies": {
-    "axios": "^1.6.0", "leaflet": "^1.9.4", "react": "^18.2.0", "react-dom": "^18.2.0",
-    "react-leaflet": "^4.2.1", "react-router-dom": "^6.18.0", "socket.io-client": "^4.6.1"
+    "axios":        "^1.6.2",
+    "leaflet":      "^1.9.4",
+    "react":        "^18.2.0",
+    "react-dom":    "^18.2.0",
+    "react-leaflet":"^4.2.1",
+    "react-router-dom": "^6.21.1",
+    "socket.io-client": "^4.6.2"
   },
   "devDependencies": {
-    "@vitejs/plugin-react": "^4.1.0", "autoprefixer": "^10.4.16",
-    "postcss": "^8.4.31", "tailwindcss": "^3.3.5", "vite": "^4.5.0"
+    "@vitejs/plugin-react": "^4.2.1",
+    "vite": "^5.0.10"
   }
 }

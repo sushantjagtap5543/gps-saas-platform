@@ -1,30 +1,40 @@
-import { Link, useNavigate, useLocation } from "react-router-dom";
+import { useEffect, useState } from "react";
 import { useAuth } from "../context/AuthContext";
-
-const links = [
-  { to: "/",          label: "Dashboard" },
-  { to: "/tracking",  label: "Live Tracking" },
-  { to: "/alerts",    label: "Alerts" },
-  { to: "/geofences", label: "Geofences" },
-  { to: "/billing",   label: "Billing" },
-];
+import api from "../api/axios";
 
 export default function Navbar() {
-  const { user, logout } = useAuth();
-  const navigate = useNavigate();
-  const location = useLocation();
+  const { user } = useAuth();
+  const [unread, setUnread] = useState(0);
+
+  useEffect(() => {
+    if (!user) return;
+    api.get("/alerts/unread-count").then(r => setUnread(r.data.count)).catch(() => {});
+    const interval = setInterval(() => {
+      api.get("/alerts/unread-count").then(r => setUnread(r.data.count)).catch(() => {});
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [user]);
+
   return (
-    <nav style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"0 24px", height:"56px", background:"#0f172a", color:"#fff", position:"sticky", top:0, zIndex:100 }}>
-      <div style={{ display:"flex", gap:"24px", alignItems:"center" }}>
-        <span style={{ fontWeight:"bold", fontSize:"16px" }}>🛰️ GPS SaaS</span>
-        {links.map(l => (
-          <Link key={l.to} to={l.to} style={{ color: location.pathname === l.to ? "#60a5fa" : "#94a3b8", textDecoration:"none", fontSize:"14px" }}>{l.label}</Link>
-        ))}
+    <header style={{ background: "#fff", borderBottom: "1px solid #e2e8f0", padding: "0 24px", height: "60px", display: "flex", alignItems: "center", justifyContent: "space-between", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
+      <div style={{ fontSize: "14px", color: "#64748b" }}>
+        <span style={{ color: "#1e293b", fontWeight: 600 }}>GPS Tracking Platform</span>
+        <span style={{ margin: "0 8px", color: "#cbd5e1" }}>|</span>
+        <span>Welcome, {user?.name}</span>
       </div>
-      <div style={{ display:"flex", gap:"12px", alignItems:"center" }}>
-        <span style={{ color:"#64748b", fontSize:"13px" }}>{user?.email || user?.name}</span>
-        <button onClick={() => { logout(); navigate("/login"); }} style={{ padding:"6px 14px", background:"#ef4444", color:"#fff", border:"none", borderRadius:"6px", cursor:"pointer", fontSize:"13px" }}>Logout</button>
+      <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+        <div style={{ position: "relative" }}>
+          <span style={{ fontSize: "20px", cursor: "pointer" }}>🔔</span>
+          {unread > 0 && (
+            <span style={{ position: "absolute", top: "-6px", right: "-6px", background: "#ef4444", color: "#fff", fontSize: "10px", fontWeight: 700, borderRadius: "50%", width: "18px", height: "18px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              {unread > 99 ? "99+" : unread}
+            </span>
+          )}
+        </div>
+        <div style={{ fontSize: "13px", background: "#f1f5f9", padding: "4px 12px", borderRadius: "20px", color: "#475569" }}>
+          {user?.role}
+        </div>
       </div>
-    </nav>
+    </header>
   );
 }

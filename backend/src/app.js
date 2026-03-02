@@ -67,6 +67,7 @@ app.use("/api/branding",              require("./modules/branding/branding.route
 app.use("/api/alerts",                require("./routes/alert.routes"));
 app.use("/api/analytics",             require("./routes/analytics.routes"));
 app.use("/api/commands",              require("./routes/command.routes"));
+app.use("/api/support",              require("./routes/support.routes"));
 app.use("/api/admin",                 require("./routes/admin.routes"));
 
 // ── 404 ────────────────────────────────────────────────────────
@@ -83,3 +84,4 @@ app.use((err, req, res, _next) => {
 });
 
 module.exports = app;
+
