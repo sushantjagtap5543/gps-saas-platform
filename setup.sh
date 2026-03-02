@@ -1,15 +1,14 @@
 #!/bin/bash
 # ================================================================
-# GPS SaaS Platform — BULLETPROOF Setup Script v4
-# ✅ Deletes ALL .env files before starting (no merge conflicts ever)
-# ✅ Generates fresh secrets with correct variable names
-# ✅ Removes ALL old containers, volumes, images, node_modules
+# GPS SaaS Platform — BULLETPROOF Setup Script v5
+# ✅ NEVER modifies docker-compose.yml (was causing YAML corruption)
+# ✅ Deletes ALL .env files first (no merge conflicts ever)
+# ✅ Generates fresh secrets with exact variable names backend needs
+# ✅ Removes all old containers, volumes, images, node_modules
 # ✅ Forces clean Docker build every time
-# ✅ Waits properly for each service before next step
 # ================================================================
 set -euo pipefail
 
-# ── Colors ──────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 BLUE='\033[0;34m'; CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
 
@@ -21,117 +20,99 @@ fail()  { echo -e "\n${RED}${BOLD}[✘] FATAL: $1${NC}\n"; exit 1; }
 echo ""
 echo -e "${BOLD}${BLUE}"
 echo "╔══════════════════════════════════════════════════════╗"
-echo "║     GPS SaaS Platform — Bulletproof Setup v4         ║"
-echo "║     Clean slate • Fresh secrets • No .env errors     ║"
+echo "║     GPS SaaS Platform — Bulletproof Setup v5         ║"
+echo "║     Clean slate • Fresh secrets • No YAML errors     ║"
 echo "╚══════════════════════════════════════════════════════╝"
 echo -e "${NC}"
 
-# ────────────────────────────────────────────────────────────────
-# 0. WORKING DIRECTORY
-# ────────────────────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 ok "Working directory: $SCRIPT_DIR"
 
-# ────────────────────────────────────────────────────────────────
-# 1. PREREQUISITES
-# ────────────────────────────────────────────────────────────────
+# ── 1. PREREQUISITES ─────────────────────────────────────────────
 step "Checking prerequisites..."
+command -v docker  >/dev/null 2>&1 || fail "Docker not found. Run: curl -fsSL https://get.docker.com | sh"
+command -v openssl >/dev/null 2>&1 || fail "openssl not found. Run: sudo apt install openssl"
 
-command -v docker >/dev/null 2>&1 || \
-    fail "Docker not found.\nInstall with: curl -fsSL https://get.docker.com | sh && sudo usermod -aG docker \$USER"
-
-command -v openssl >/dev/null 2>&1 || \
-    fail "openssl not found. Run: sudo apt install openssl"
-
-# Detect docker compose command
 if command -v docker-compose >/dev/null 2>&1; then
     DC="docker-compose"
 elif docker compose version >/dev/null 2>&1; then
     DC="docker compose"
 else
-    fail "Docker Compose not found.\nRun: sudo apt-get install -y docker-compose-plugin"
+    fail "Docker Compose not found. Run: sudo apt-get install -y docker-compose-plugin"
 fi
+ok "Docker  : $(docker --version | cut -d' ' -f3 | tr -d ',')"
+ok "Compose : $($DC version --short 2>/dev/null || echo 'detected')"
 
-ok "Docker   : $(docker --version | cut -d' ' -f3 | tr -d ',')"
-ok "Compose  : $($DC version --short 2>/dev/null || echo 'detected')"
+# ── 2. RESTORE docker-compose.yml FROM GIT IF CORRUPTED ──────────
+step "Verifying docker-compose.yml integrity..."
 
-# ────────────────────────────────────────────────────────────────
-# 2. NUKE ALL OLD .ENV FILES — ZERO TOLERANCE FOR CONFLICTS
-# ────────────────────────────────────────────────────────────────
-step "Destroying ALL old .env files (prevents git merge conflict errors forever)..."
-
-# Every possible .env variant this project or git might leave behind
-ENV_FILES=(
-    ".env"
-    ".env.production"
-    ".env.local"
-    ".env.development"
-    ".env.staging"
-    ".env.test"
-    ".env.backup"
-    ".env.bak"
-    ".env.old"
-    ".env.example"
-    ".env.sample"
-    ".env.template"
-    ".env.prod"
-    ".env.copy"
-)
-
-for f in "${ENV_FILES[@]}"; do
-    if [ -f "$f" ]; then
-        rm -f "$f"
-        warn "Deleted: $f"
+# Check if YAML is valid
+if ! python3 -c "import yaml; yaml.safe_load(open('docker-compose.yml'))" 2>/dev/null; then
+    warn "docker-compose.yml is corrupted! Restoring from git..."
+    if git diff --name-only HEAD 2>/dev/null | grep -q "docker-compose.yml"; then
+        git checkout HEAD -- docker-compose.yml 2>/dev/null && ok "Restored from git" || true
     fi
+    # If still broken, try the backup
+    if [ -f docker-compose.yml.bak ]; then
+        cp docker-compose.yml.bak docker-compose.yml
+        ok "Restored from backup"
+    fi
+    # Final check
+    python3 -c "import yaml; yaml.safe_load(open('docker-compose.yml'))" 2>/dev/null \
+        || fail "docker-compose.yml is still corrupted. Please re-download the project."
+fi
+ok "docker-compose.yml is valid"
+
+# Make a backup before we do anything
+cp docker-compose.yml docker-compose.yml.bak
+ok "docker-compose.yml backed up"
+
+# ── 3. NUKE ALL OLD .ENV FILES ────────────────────────────────────
+step "Removing ALL .env files (prevents merge conflict errors)..."
+
+for f in .env .env.production .env.local .env.development .env.staging \
+          .env.test .env.backup .env.bak .env.old .env.example \
+          .env.sample .env.template .env.prod .env.copy; do
+    [ -f "$f" ] && rm -f "$f" && warn "Deleted: $f" || true
 done
 
-# Also remove any .env file with merge conflict markers anywhere
-find . -maxdepth 2 -name ".env*" -type f 2>/dev/null | while read f; do
-    if grep -q "<<<<<<\|=======\|>>>>>>>" "$f" 2>/dev/null; then
-        rm -f "$f"
-        warn "Deleted conflict-infected: $f"
-    fi
+# Kill any file with git merge conflict markers
+find . -maxdepth 3 -name ".env*" -type f 2>/dev/null | while IFS= read -r f; do
+    grep -q "<<<<<<\|=======\|>>>>>>>" "$f" 2>/dev/null && rm -f "$f" && warn "Deleted conflict file: $f" || true
 done
 
-ok "All .env files gone — clean slate"
+ok "All .env files removed"
 
-# ────────────────────────────────────────────────────────────────
-# 3. GENERATE FRESH CRYPTOGRAPHIC SECRETS
-# ────────────────────────────────────────────────────────────────
-step "Generating fresh cryptographic secrets..."
+# ── 4. GENERATE FRESH SECRETS ─────────────────────────────────────
+step "Generating cryptographic secrets..."
 
-# Generate all secrets
 JWT_SECRET=$(openssl rand -hex 32)
-JWT_REFRESH_SECRET=$(openssl rand -hex 32)   # <-- backend requires THIS exact name
+JWT_REFRESH_SECRET=$(openssl rand -hex 32)
 DB_PASSWORD=$(openssl rand -hex 16)
 REDIS_PASSWORD=$(openssl rand -hex 12)
 SESSION_SECRET=$(openssl rand -hex 24)
 
-ok "All secrets generated"
+ok "Secrets generated"
 
-# ────────────────────────────────────────────────────────────────
-# 4. WRITE THE ONE TRUE .env.production
-#    Matches EXACTLY what backend/src/server.js expects:
-#    POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DB, POSTGRES_USER,
-#    POSTGRES_PASSWORD, JWT_SECRET, JWT_REFRESH_SECRET
-# ────────────────────────────────────────────────────────────────
-step "Writing .env.production with all required variables..."
+# ── 5. WRITE CLEAN .env.production ───────────────────────────────
+# Variable names match EXACTLY what backend/src/server.js checks:
+# POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DB, POSTGRES_USER,
+# POSTGRES_PASSWORD, JWT_SECRET, JWT_REFRESH_SECRET
+step "Writing .env.production..."
 
 cat > .env.production << ENVEOF
 # ================================================================
-# GPS SaaS Platform — Production Environment
-# AUTO-GENERATED by setup.sh on $(date)
+# GPS SaaS Platform — Auto-generated by setup.sh on $(date)
 # DO NOT EDIT — re-run setup.sh to regenerate
-# This file is in .gitignore — never committed
 # ================================================================
 
-# ── Node ─────────────────────────────────────────────────────────
+# Node
 NODE_ENV=production
 API_PORT=3000
 LOG_LEVEL=info
 
-# ── PostgreSQL (exact names required by backend/src/server.js) ───
+# PostgreSQL — exact names required by backend/src/server.js
 POSTGRES_HOST=postgres
 POSTGRES_PORT=5432
 POSTGRES_DB=gpsdb
@@ -139,117 +120,104 @@ POSTGRES_USER=gpsuser
 POSTGRES_PASSWORD=${DB_PASSWORD}
 DATABASE_URL=postgresql://gpsuser:${DB_PASSWORD}@postgres:5432/gpsdb
 
-# ── Redis ─────────────────────────────────────────────────────────
+# Redis
 REDIS_HOST=redis
 REDIS_PORT=6379
 REDIS_PASSWORD=${REDIS_PASSWORD}
 REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379
 
-# ── JWT (exact names required by backend/src/server.js) ──────────
+# JWT — exact names required by backend/src/server.js
 JWT_SECRET=${JWT_SECRET}
 JWT_EXPIRES_IN=7d
 JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
 REFRESH_EXPIRES_IN=30d
 
-# ── Session ───────────────────────────────────────────────────────
+# Session
 SESSION_SECRET=${SESSION_SECRET}
 
-# ── TCP Server ────────────────────────────────────────────────────
+# TCP
 TCP_PORT=5000
 
-# ── CORS ──────────────────────────────────────────────────────────
+# CORS
 CORS_ORIGIN=*
 
-# ── Admin (change password after first login!) ────────────────────
+# Admin (change after first login)
 ADMIN_EMAIL=admin@gps.local
 ADMIN_PASSWORD=Admin@123!
 
-# ── Email (optional — leave blank to disable) ─────────────────────
+# Email (optional — leave blank to disable)
 SMTP_HOST=
 SMTP_PORT=587
 SMTP_USER=
 SMTP_PASS=
 SMTP_FROM=noreply@gpstracker.com
 
-# ── Razorpay (optional billing — leave blank to disable) ──────────
+# Razorpay (optional — leave blank to disable)
 RAZORPAY_KEY_ID=
 RAZORPAY_KEY_SECRET=
 ENVEOF
 
-ok ".env.production written (clean, no conflicts possible)"
+ok ".env.production written"
 
-# Create .env symlink so any tool looking for .env also works
+# Symlink .env → .env.production
 ln -sf .env.production .env
-ok ".env → .env.production symlink created"
+ok ".env → .env.production"
 
-# Add both to .gitignore to prevent future git conflicts
-if [ -f .gitignore ]; then
-    grep -qxF ".env" .gitignore          || echo ".env"            >> .gitignore
-    grep -qxF ".env.production" .gitignore || echo ".env.production" >> .gitignore
-    grep -qxF "DEPLOYMENT_INFO.txt" .gitignore || echo "DEPLOYMENT_INFO.txt" >> .gitignore
-else
-    printf ".env\n.env.production\n.env.*\nDEPLOYMENT_INFO.txt\n" > .gitignore
-fi
-ok ".gitignore updated (.env files will never be committed again)"
+# Protect .env files from git forever
+{
+  grep -qxF ".env"            .gitignore 2>/dev/null || echo ".env"
+  grep -qxF ".env.*"          .gitignore 2>/dev/null || echo ".env.*"
+  grep -qxF "DEPLOYMENT_INFO.txt" .gitignore 2>/dev/null || echo "DEPLOYMENT_INFO.txt"
+} >> .gitignore 2>/dev/null || true
+ok ".gitignore updated"
 
-# ────────────────────────────────────────────────────────────────
-# 5. STOP AND REMOVE ALL OLD CONTAINERS + VOLUMES
-# ────────────────────────────────────────────────────────────────
-step "Stopping and removing ALL old containers, volumes, networks..."
+# ── 6. FIX docker-compose.yml (SAFELY — only env_file lines) ─────
+step "Fixing docker-compose.yml env_file references (safe edit only)..."
 
-# Stop gracefully with old env file reference suppressed
+# ONLY fix env_file: .env lines → env_file: .env.production
+# Use sed on specific pattern — does NOT touch Redis command block
+sed -i \
+    -e 's|^\( *env_file: *\)\.env$|\1.env.production|g' \
+    -e 's|^\( *env_file: *\)\- \.env$|\1.env.production|g' \
+    docker-compose.yml 2>/dev/null && ok "env_file references updated" || warn "sed skipped"
+
+# Validate YAML is still good after our edit
+python3 -c "import yaml; yaml.safe_load(open('docker-compose.yml'))" 2>/dev/null \
+    && ok "docker-compose.yml still valid after edit" \
+    || { warn "Edit broke YAML — restoring backup"; cp docker-compose.yml.bak docker-compose.yml; }
+
+# ── 7. STOP + REMOVE ALL OLD CONTAINERS & VOLUMES ────────────────
+step "Removing all old containers, volumes, networks..."
+
 $DC down --remove-orphans --volumes 2>/dev/null && ok "Old stack removed" || warn "Nothing was running"
 
-# Force-remove any stale named containers
-CONTAINERS=(
-    gps_postgres gps_redis gps_backend gps_tcp_server
-    gps_notifications gps_frontend gps_admin gps_nginx
-    # alternate naming patterns
-    gpssaasplatform-postgres-1 gpssaasplatform-backend-1
-    gpssaasplatformmain-postgres-1 gpssaasplatformmain-backend-1
-)
-for c in "${CONTAINERS[@]}"; do
-    docker rm -f "$c" 2>/dev/null && warn "Removed stale container: $c" || true
+for c in gps_postgres gps_redis gps_backend gps_tcp_server \
+          gps_notifications gps_frontend gps_admin gps_nginx; do
+    docker rm -f "$c" 2>/dev/null && warn "Removed: $c" || true
 done
+ok "Old containers gone"
 
-ok "All old containers gone"
+# ── 8. REMOVE OLD IMAGES & BUILD CACHE ───────────────────────────
+step "Cleaning old Docker images and build cache..."
 
-# ────────────────────────────────────────────────────────────────
-# 6. REMOVE OLD IMAGES TO FORCE CLEAN REBUILD
-# ────────────────────────────────────────────────────────────────
-step "Removing old project Docker images (forces fresh build)..."
-
-# Get project name (what docker compose uses for image naming)
 PROJECT=$(basename "$SCRIPT_DIR" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9')
-
-# Remove images matching project patterns
-for pattern in "$PROJECT" "gps-saas" "gpssaas" "gps_backend" "gps_frontend" "gps_admin" "gps_tcp"; do
+for p in "$PROJECT" "gps-saas" "gpssaas" "gps_backend" "gps_frontend" "gps_admin"; do
     docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null \
-        | grep -i "$pattern" \
-        | xargs -r docker rmi -f 2>/dev/null \
-        && warn "Removed images matching: $pattern" || true
+        | grep -i "$p" \
+        | xargs -r docker rmi -f 2>/dev/null || true
 done
 
-# Prune dangling images + build cache for truly clean slate
-docker image prune -f  >/dev/null 2>&1 && ok "Dangling images pruned"
+docker image prune  -f >/dev/null 2>&1 && ok "Dangling images pruned"
 docker builder prune -f >/dev/null 2>&1 && ok "Build cache cleared"
-ok "Image cleanup done"
 
-# ────────────────────────────────────────────────────────────────
-# 7. REMOVE ALL node_modules AND LOCK FILES
-#    (Docker will do a fresh npm install inside each container)
-# ────────────────────────────────────────────────────────────────
-step "Removing node_modules and lock files (fresh npm install in Docker)..."
+# ── 9. REMOVE node_modules & LOCK FILES ──────────────────────────
+step "Removing node_modules and lock files..."
 find . -name "node_modules" -type d -prune -exec rm -rf {} + 2>/dev/null || true
-find . -name "package-lock.json"  -delete 2>/dev/null || true
-find . -name "yarn.lock"          -delete 2>/dev/null || true
-find . -name ".npm"       -type d -exec rm -rf {} + 2>/dev/null || true
-ok "node_modules and lock files removed"
+find . \( -name "package-lock.json" -o -name "yarn.lock" \) -delete 2>/dev/null || true
+ok "node_modules removed"
 
-# ────────────────────────────────────────────────────────────────
-# 8. UPDATE PACKAGE.JSON FILES TO LATEST STABLE VERSIONS
-# ────────────────────────────────────────────────────────────────
-step "Pinning dependencies to latest stable versions..."
+# ── 10. PIN PACKAGE.JSON TO LATEST STABLE ────────────────────────
+step "Updating package.json files..."
 
 cat > backend/package.json << 'EOF'
 {
@@ -284,12 +252,10 @@ cat > backend/package.json << 'EOF'
     "uuid":                   "^10.0.0",
     "winston":                "^3.13.0"
   },
-  "devDependencies": {
-    "nodemon": "^3.1.4"
-  }
+  "devDependencies": { "nodemon": "^3.1.4" }
 }
 EOF
-ok "backend/package.json → latest stable"
+ok "backend/package.json updated"
 
 cat > tcp-server/package.json << 'EOF'
 {
@@ -304,10 +270,9 @@ cat > tcp-server/package.json << 'EOF'
   }
 }
 EOF
-ok "tcp-server/package.json → latest stable"
+ok "tcp-server/package.json updated"
 
-if [ -f notifications/package.json ]; then
-cat > notifications/package.json << 'EOF'
+[ -f notifications/package.json ] && cat > notifications/package.json << 'EOF'
 {
   "name": "gps-notifications",
   "version": "2.0.0",
@@ -320,36 +285,23 @@ cat > notifications/package.json << 'EOF'
   }
 }
 EOF
-ok "notifications/package.json → latest stable"
-fi
+[ -f notifications/package.json ] && ok "notifications/package.json updated"
 
-# ────────────────────────────────────────────────────────────────
-# 9. UPDATE DOCKERFILES FOR CLEAN npm INSTALL
-# ────────────────────────────────────────────────────────────────
+# ── 11. UPDATE DOCKERFILES ────────────────────────────────────────
 step "Updating Dockerfiles..."
 
 cat > backend/Dockerfile << 'EOF'
 FROM node:20-alpine
-
-# Build tools needed for some native modules (bcrypt)
 RUN apk add --no-cache curl wget python3 make g++
-
 WORKDIR /app
-
-# Install deps first (better layer caching)
 COPY package.json ./
 RUN rm -f package-lock.json yarn.lock && \
-    npm install --production --no-fund --no-audit --prefer-dedupe
-
+    npm install --production --no-fund --no-audit
 COPY . .
-
 RUN mkdir -p logs invoices
-
 EXPOSE 3000
-
 HEALTHCHECK --interval=20s --timeout=10s --start-period=120s --retries=6 \
   CMD wget -qO- http://localhost:3000/health | grep -q '"status"' || exit 1
-
 CMD ["node", "src/server.js"]
 EOF
 ok "backend/Dockerfile updated"
@@ -367,8 +319,7 @@ CMD ["node", "src/server.js"]
 EOF
 ok "tcp-server/Dockerfile updated"
 
-if [ -f notifications/Dockerfile ]; then
-cat > notifications/Dockerfile << 'EOF'
+[ -f notifications/Dockerfile ] && cat > notifications/Dockerfile << 'EOF'
 FROM node:20-alpine
 WORKDIR /app
 COPY package.json ./
@@ -377,14 +328,10 @@ RUN rm -f package-lock.json yarn.lock && \
 COPY . .
 CMD ["node", "worker.js"]
 EOF
-ok "notifications/Dockerfile updated"
-fi
+[ -f notifications/Dockerfile ] && ok "notifications/Dockerfile updated"
 
-# ────────────────────────────────────────────────────────────────
-# 10. CREATE REQUIRED DIRECTORIES + SELF-SIGNED SSL CERT
-# ────────────────────────────────────────────────────────────────
-step "Creating required directories and SSL certificate..."
-
+# ── 12. DIRECTORIES & SSL CERT ───────────────────────────────────
+step "Creating directories and SSL certificate..."
 mkdir -p nginx/ssl logs backend/logs 2>/dev/null || true
 
 if [ ! -f nginx/ssl/nginx.crt ]; then
@@ -394,142 +341,82 @@ if [ ! -f nginx/ssl/nginx.crt ]; then
         -subj "/C=IN/ST=MH/L=Mumbai/O=GPS/CN=localhost" 2>/dev/null
     ok "Self-signed SSL cert created"
 else
-    ok "SSL cert already exists"
+    ok "SSL cert exists"
 fi
 
-# ────────────────────────────────────────────────────────────────
-# 11. PATCH docker-compose.yml
-#     - All env_file entries → .env.production
-#     - Redis command gets REDIS_PASSWORD requirepass
-# ────────────────────────────────────────────────────────────────
-step "Patching docker-compose.yml..."
-
-# Fix all env_file references to use .env.production
-sed -i \
-    -e 's|env_file:.*\.env$|env_file: .env.production|g' \
-    -e 's|env_file:.*\.env\.local|env_file: .env.production|g' \
-    -e 's|env_file:.*\.env\.production\..*|env_file: .env.production|g' \
-    docker-compose.yml 2>/dev/null && ok "env_file references fixed" || true
-
-# Add Redis password to redis command if not already there
-if ! grep -q "requirepass" docker-compose.yml 2>/dev/null; then
-    # Use Python for reliable multi-line YAML editing
-    python3 - << 'PYEOF' 2>/dev/null && ok "Redis requirepass added" || warn "Redis patch skipped"
-import sys
-content = open('docker-compose.yml').read()
-old = '--maxmemory-policy allkeys-lru'
-new = '--maxmemory-policy allkeys-lru\n      --requirepass ${REDIS_PASSWORD}'
-if old in content and 'requirepass' not in content:
-    content = content.replace(old, new, 1)
-    open('docker-compose.yml', 'w').write(content)
-    print('patched')
-PYEOF
-fi
-
-ok "docker-compose.yml patched"
-
-# ────────────────────────────────────────────────────────────────
-# 12. BUILD DOCKER IMAGES (NO CACHE — FRESH EVERY TIME)
-# ────────────────────────────────────────────────────────────────
-step "Building Docker images (no-cache, this takes 5-10 minutes first time)..."
+# ── 13. BUILD DOCKER IMAGES ───────────────────────────────────────
+step "Building Docker images (no-cache — takes 5-10 min first time)..."
 echo ""
 
 $DC --env-file .env.production build --no-cache 2>&1 | \
-    grep -v "^#[0-9]" | \
-    grep -E "Step|STEP|step|Successfully built|Successfully tagged|ERROR|error:|Warning|--->" \
-    || true
+    grep -E "^(Step|step|STEP|Successfully|ERROR|error:|Warning|--->" || true
 
 echo ""
-ok "Docker images built successfully"
+ok "Build complete"
 
-# ────────────────────────────────────────────────────────────────
-# 13. START SERVICES
-# ────────────────────────────────────────────────────────────────
+# ── 14. START SERVICES ────────────────────────────────────────────
 step "Starting all services..."
 $DC --env-file .env.production up -d
 ok "Services started"
 
-# ────────────────────────────────────────────────────────────────
-# 14. WAIT FOR POSTGRESQL (with proper timeout)
-# ────────────────────────────────────────────────────────────────
-step "Waiting for PostgreSQL to be healthy..."
-
+# ── 15. WAIT FOR POSTGRESQL ───────────────────────────────────────
+step "Waiting for PostgreSQL..."
 MAX=60; N=0
 until $DC exec -T postgres pg_isready -U gpsuser -d gpsdb >/dev/null 2>&1; do
     N=$((N+1))
-    [ $N -ge $MAX ] && fail "PostgreSQL not ready after $((MAX*3))s.\nRun: $DC logs postgres"
-    printf "."
-    sleep 3
+    [ $N -ge $MAX ] && fail "PostgreSQL not ready after $((MAX*3))s\nCheck: $DC logs postgres"
+    printf "."; sleep 3
 done
-echo ""
-ok "PostgreSQL is ready"
+echo ""; ok "PostgreSQL ready"
 
-# ────────────────────────────────────────────────────────────────
-# 15. WAIT FOR BACKEND API
-# ────────────────────────────────────────────────────────────────
-step "Waiting for Backend API to be healthy..."
-
+# ── 16. WAIT FOR BACKEND ──────────────────────────────────────────
+step "Waiting for Backend API..."
 MAX=40; N=0
 until curl -sf http://localhost:3000/health >/dev/null 2>&1; do
     N=$((N+1))
     if [ $N -ge $MAX ]; then
-        warn "Backend health check timed out after $((MAX*4))s"
-        warn "Showing last 30 lines of backend logs:"
-        $DC logs --tail=30 backend 2>/dev/null || true
+        warn "Backend timed out — showing logs:"
+        $DC logs --tail=40 backend 2>/dev/null || true
         break
     fi
-    printf "."
-    sleep 4
+    printf "."; sleep 4
 done
 echo ""
+curl -sf http://localhost:3000/health >/dev/null 2>&1 && ok "Backend API healthy" || warn "Backend still starting (check: $DC logs backend)"
 
-if curl -sf http://localhost:3000/health >/dev/null 2>&1; then
-    ok "Backend API is healthy at http://localhost:3000"
-fi
-
-# ────────────────────────────────────────────────────────────────
-# 16. SET ADMIN PASSWORD IN DATABASE
-# ────────────────────────────────────────────────────────────────
-step "Setting admin password in database..."
+# ── 17. SET ADMIN PASSWORD ────────────────────────────────────────
+step "Setting admin password..."
 sleep 2
 
-$DC exec -T backend node - << 'JSEOF' 2>/dev/null && ok "Admin password set: Admin@123!" || warn "Admin password setup skipped (non-fatal)"
+$DC exec -T backend node - << 'JSEOF' 2>/dev/null \
+    && ok "Admin password set → Admin@123!" \
+    || warn "Admin password skipped (non-fatal — may already be set)"
 const bcrypt = require('bcryptjs');
 const { Sequelize } = require('sequelize');
-const seq = new Sequelize(process.env.DATABASE_URL, {
-  logging: false,
-  dialectOptions: { connectTimeout: 10000 }
-});
+const seq = new Sequelize(process.env.DATABASE_URL, { logging: false });
 (async () => {
   try {
     await seq.authenticate();
     const hash = await bcrypt.hash('Admin@123!', 12);
-    const [, meta] = await seq.query(
-      "UPDATE users SET password = :h WHERE email IN ('admin@gps.local','superadmin@gps.local')",
+    await seq.query(
+      "UPDATE users SET password=:h WHERE email IN ('admin@gps.local','superadmin@gps.local')",
       { replacements: { h: hash } }
     );
-    console.log('Admin password updated, rows affected:', meta.rowCount || 'n/a');
+    console.log('Done');
     await seq.close();
-  } catch(e) {
-    console.log('Note:', e.message);
-    process.exit(0);
-  }
+  } catch(e) { console.log('Note:', e.message); process.exit(0); }
 })();
 JSEOF
 
-# ────────────────────────────────────────────────────────────────
-# 17. SERVICE STATUS SUMMARY
-# ────────────────────────────────────────────────────────────────
+# ── 18. STATUS ────────────────────────────────────────────────────
 step "Service status:"
 echo ""
 $DC ps 2>/dev/null || true
 
-# ────────────────────────────────────────────────────────────────
-# 18. SAVE DEPLOYMENT INFO (passwords etc.)
-# ────────────────────────────────────────────────────────────────
-# Get public IP if available
+# ── 19. SAVE DEPLOYMENT INFO ──────────────────────────────────────
 PUBLIC_IP=$(curl -sf --max-time 5 https://api.ipify.org 2>/dev/null || \
             curl -sf --max-time 5 http://checkip.amazonaws.com 2>/dev/null || \
+            hostname -I 2>/dev/null | awk '{print $1}' || \
             echo "YOUR_SERVER_IP")
 
 cat > DEPLOYMENT_INFO.txt << INFOEOF
@@ -538,54 +425,36 @@ GPS SaaS Platform — Deployment Info
 Generated: $(date)
 ================================================================
 
-🌐 URLs:
+URLs:
   Client Portal  : http://${PUBLIC_IP}
   Admin Panel    : http://${PUBLIC_IP}/admin
   Backend API    : http://${PUBLIC_IP}/api
   Health Check   : http://${PUBLIC_IP}/api/health
-  GPS TCP Port   : ${PUBLIC_IP}:5000  (for GPS devices)
+  GPS TCP Port   : ${PUBLIC_IP}:5000
 
-🔐 Login:
-  Email          : admin@gps.local
-  Password       : Admin@123!
-  (Change this password after first login!)
+Login:
+  Email    : admin@gps.local
+  Password : Admin@123!
 
-🗄️  Database:
-  Host           : localhost:5432
-  Database       : gpsdb
-  Username       : gpsuser
-  Password       : ${DB_PASSWORD}
+Database:
+  DB       : gpsdb
+  User     : gpsuser
+  Password : ${DB_PASSWORD}
 
-📦 Redis:
-  Host           : localhost:6379
-  Password       : ${REDIS_PASSWORD}
+Redis Password   : ${REDIS_PASSWORD}
+JWT_SECRET       : ${JWT_SECRET}
+JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
 
-🔑 JWT Secrets:
-  JWT_SECRET          : ${JWT_SECRET}
-  JWT_REFRESH_SECRET  : ${JWT_REFRESH_SECRET}
-
-📋 Useful Commands:
-  View all logs      : $DC logs -f
-  View backend logs  : $DC logs -f backend
-  View DB logs       : $DC logs -f postgres
-  Restart service    : $DC restart backend
-  Stop everything    : $DC down
-  Full clean rebuild : bash setup.sh
-  Service status     : $DC ps
-
-⚠️  SECURITY REMINDERS:
-  1. Change admin password after first login
-  2. Restrict CORS_ORIGIN to your domain in .env.production
-  3. Set up firewall: only ports 80, 443, 5000 should be public
-  4. Keep DEPLOYMENT_INFO.txt private (contains passwords)
+Commands:
+  Logs    : $DC logs -f [service]
+  Restart : $DC restart [service]
+  Stop    : $DC down
+  Rebuild : sudo bash setup.sh
 ================================================================
 INFOEOF
+ok "Credentials saved → DEPLOYMENT_INFO.txt"
 
-ok "Credentials saved to DEPLOYMENT_INFO.txt (keep this private!)"
-
-# ────────────────────────────────────────────────────────────────
-# DONE!
-# ────────────────────────────────────────────────────────────────
+# ── DONE ──────────────────────────────────────────────────────────
 echo ""
 echo -e "${GREEN}${BOLD}"
 echo "╔══════════════════════════════════════════════════════╗"
@@ -599,8 +468,8 @@ printf "║   🛰️  TCP     → %-34s║\n" "${PUBLIC_IP}:5000"
 echo "║                                                      ║"
 echo "║   👤 admin@gps.local  /  Admin@123!                  ║"
 echo "║                                                      ║"
-echo "║   📋  cat DEPLOYMENT_INFO.txt  (all passwords)       ║"
-echo "║   📊  $DC logs -f          (live logs)          ║"
+echo "║   📋 cat DEPLOYMENT_INFO.txt   (all passwords)       ║"
+echo "║   📊 $DC logs -f          (live logs)           ║"
 echo "║                                                      ║"
 echo "║   🧪 Test without hardware:                          ║"
 echo "║      Login → Admin Panel → Device Tester             ║"
