@@ -99,12 +99,8 @@ export default function Billing() {
             </button>
           </div>
         ))}
-<<<<<<< Updated upstream
         {!plans.length && <p style={{ color:"#94a3b8" }}>No plans available.</p>}
       </div>
     </div>
-=======
-      </div>    </div>
->>>>>>> Stashed changes
   );
 }
