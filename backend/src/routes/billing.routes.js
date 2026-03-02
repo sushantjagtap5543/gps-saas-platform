@@ -1,5 +1,5 @@
 const router = require("express").Router();
-const auth    = require("../middleware/auth.middleware");
+const { authenticate: auth } = require("../middleware/auth.middleware");
 const billing = require("../controllers/billing.controller");
 const webhook = require("../controllers/webhook.controller");
 

@@ -29,8 +29,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 ok "Working directory: $SCRIPT_DIR"
 
-
-
 # ── 1. PREREQUISITES ─────────────────────────────────────────────
 step "Checking prerequisites..."
 command -v docker  >/dev/null 2>&1 || fail "Docker not found. Run: curl -fsSL https://get.docker.com | sh"

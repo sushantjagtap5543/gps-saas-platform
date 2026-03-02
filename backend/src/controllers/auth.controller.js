@@ -49,7 +49,6 @@ exports.login = async (req, res) => {
       ? await bcrypt.compare(password, user.password)
       : await bcrypt.compare(password, dummy);
 
-    // Log attempt
     await db.AuditLog.create({
       user_id:    user ? user.id : null,
       action:     valid && user?.is_active ? "LOGIN_SUCCESS" : "LOGIN_FAILED",
@@ -62,7 +61,6 @@ exports.login = async (req, res) => {
     if (!user.is_active)
       return res.status(403).json({ message: "Account suspended. Contact support." });
 
-    // Update last login
     await user.update({ last_login: new Date(), login_count: (user.login_count || 0) + 1 });
 
     const { accessToken, refreshToken } = generateTokens(user);
@@ -139,7 +137,7 @@ exports.changePassword = async (req, res) => {
 };
 
 // ── Self-registration (QR code flow) ──────────────────────────
-exports.register = async (req, res) => {
+exports.selfRegister = async (req, res) => {
   try {
     const { imei, name, email, password, phone, company, vehicle_number, vehicle_type } = req.body;
     if (!imei || !name || !email || !password || !vehicle_number)
@@ -154,9 +152,8 @@ exports.register = async (req, res) => {
     if (await db.Device.findOne({ where: { imei } }))
       return res.status(409).json({ message: "This IMEI is already registered" });
 
-    // Create user
-    const bcrypt = require("bcryptjs");
-    const hash = await bcrypt.hash(password, parseInt(process.env.BCRYPT_ROUNDS) || 12);
+    const bcryptjs = require("bcryptjs");
+    const hash = await bcryptjs.hash(password, parseInt(process.env.BCRYPT_ROUNDS) || 12);
     const user = await db.User.create({
       name, email, password: hash, phone,
       company_name: company,
@@ -164,7 +161,6 @@ exports.register = async (req, res) => {
       is_active: true,
     });
 
-    // Create device
     await db.Device.create({
       tenant_id:      user.id,
       imei,
@@ -182,7 +178,7 @@ exports.register = async (req, res) => {
 
     return res.status(201).json({ message: "Account created successfully! Please login." });
   } catch (err) {
-    console.error("[AUTH] register:", err.message);
+    logger.error("[AUTH] selfRegister: " + err.message);
     return res.status(500).json({ message: "Registration failed: " + err.message });
   }
 };

@@ -1,6 +1,6 @@
 const jwt = require("jsonwebtoken");
 
-module.exports = (req, res, next) => {
+const authenticate = (req, res, next) => {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
     return res.status(401).json({ message: "Authorization header missing" });
@@ -16,3 +16,5 @@ module.exports = (req, res, next) => {
     return res.status(401).json({ message: msg });
   }
 };
+
+module.exports = { authenticate };
