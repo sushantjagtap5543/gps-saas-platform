@@ -5,7 +5,7 @@ const logger  = require("./utils/logger");
 const { handlePacket } = require("./protocols/gt06/handlers");
 const sessions = require("./sessions/sessionManager");
 
-const TCP_PORT = parseInt(process.env.TCP_PORT || "5023");
+const TCP_PORT = parseInt(process.env.TCP_PORT || "5000");
 
 // ── TCP SERVER ─────────────────────────────────────────────
 const tcpServer = net.createServer((socket) => {

@@ -182,15 +182,10 @@ CREATE TABLE IF NOT EXISTS gps_history (
 DO $$ DECLARE m RECORD;
 BEGIN
   FOR m IN SELECT generate_series('2025-01-01'::date, '2030-12-01'::date, '1 month'::interval) AS month LOOP
-<<<<<<< Updated upstream
     EXECUTE format(
       'CREATE TABLE IF NOT EXISTS gps_history_%s PARTITION OF gps_history FOR VALUES FROM (%L) TO (%L)',
       to_char(m.month, 'YYYY_MM'), m.month, m.month + interval '1 month'
     );
-=======
-    EXECUTE format('CREATE TABLE IF NOT EXISTS gps_history_%s PARTITION OF gps_history FOR VALUES FROM (%L) TO (%L)',
-      to_char(m.month, 'YYYY_MM'), m.month, m.month + interval '1 month');
->>>>>>> Stashed changes
   END LOOP;
 END $$;
 

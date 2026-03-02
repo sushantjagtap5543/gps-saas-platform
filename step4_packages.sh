@@ -25,7 +25,6 @@ cat > backend/package.json << 'EOF'
     "cors":                   "^2.8.5",
     "dotenv":                 "^16.4.5",
     "express":                "^4.19.2",
-    "express-mongo-sanitize": "^2.2.0",
     "express-rate-limit":     "^7.3.1",
     "helmet":                 "^7.1.0",
     "ioredis":                "^5.4.1",

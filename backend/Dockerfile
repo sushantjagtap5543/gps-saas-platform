@@ -12,9 +12,9 @@ COPY . .
 # Create required runtime directories
 RUN mkdir -p logs invoices
 
-EXPOSE 3000
+EXPOSE 5024
 
 HEALTHCHECK --interval=20s --timeout=10s --start-period=90s --retries=5 \
-  CMD wget -qO- http://localhost:3000/health | grep -q '"status"' || exit 1
+  CMD wget -qO- http://localhost:5024/health | grep -q '"status"' || exit 1
 
 CMD ["node", "src/server.js"]

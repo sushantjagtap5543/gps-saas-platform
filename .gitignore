@@ -1,59 +1,60 @@
-<<<<<<< Updated upstream
-# SECRETS — never commit
-.env.production
-.env.local
-.env
-*/serviceAccount.json
-nginx/ssl/
-
-# Node
+# Dependencies
 node_modules/
-*/node_modules/
-npm-debug.log*
+package-lock.json
+yarn.lock
 
-# Build artifacts
-frontend/dist/
-gps-admin/dist/
-
-# Runtime
-logs/
-invoices/
-*.log
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Docker
-docker-compose.override.yml
-=======
-# Never commit these
-.env.production
-.env.local
+# Environment
 .env
-
-# Node modules
-node_modules/
-*/node_modules/
+.env.local
+.env.*.local
+.env.production
 
 # Build outputs
-*/dist/
-*/build/
+dist/
+build/
+*.tsbuildinfo
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
 
 # Logs
 logs/
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
-# SSL certificates
-nginx/ssl/
+# Database
+postgres_data/
+*.sql.dump
 
-# Firebase service account
-notifications/push/serviceAccount.json
-
-# PDF invoices
-backend/invoices/
+# Temporary files
+temp/
+tmp/
+*.tmp
 
 # OS
-.DS_Store
 Thumbs.db
->>>>>>> Stashed changes
+.DS_Store
+
+# Configuration backups
+*.conf.bak
+nginx/ssl/
+
+# Cache
+.cache/
+.eslintcache
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Secrets
+DEPLOYMENT_INFO.txt
+credentials.json
+secrets.env

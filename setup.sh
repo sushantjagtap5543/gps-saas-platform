@@ -371,8 +371,7 @@ cat > backend/package.json << 'EOF'
     "cors":                   "^2.8.5",
     "dotenv":                 "^16.4.5",
     "express":                "^4.19.2",
-    "express-mongo-sanitize": "^2.2.0",
-    "express-rate-limit":     "^7.3.1",
+        "express-rate-limit":     "^7.3.1",
     "helmet":                 "^7.1.0",
     "ioredis":                "^5.4.1",
     "joi":                    "^17.13.3",
@@ -573,59 +572,3 @@ PUBLIC_IP=$(curl -sf --max-time 5 https://api.ipify.org 2>/dev/null || \
             hostname -I 2>/dev/null | awk '{print $1}' || echo "YOUR_SERVER_IP")
 
 cat > DEPLOYMENT_INFO.txt << INFOEOF
-================================================================
-GPS SaaS Platform — Deployment Info — $(date)
-================================================================
-
-URLs:
-  Client Portal  : http://${PUBLIC_IP}
-  Admin Panel    : http://${PUBLIC_IP}/admin
-  Backend API    : http://${PUBLIC_IP}/api
-  Health Check   : http://${PUBLIC_IP}/api/health
-  GPS TCP Port   : ${PUBLIC_IP}:5000  ← for GPS hardware devices
-
-Login:
-  Email    : admin@gps.local
-  Password : Admin@123!
-  (Change password after first login!)
-
-Database:
-  DB / User  : gpsdb / gpsuser
-  Password   : ${DB_PASSWORD}
-
-Redis Password         : ${REDIS_PASSWORD}
-JWT_SECRET             : ${JWT_SECRET}
-JWT_REFRESH_SECRET     : ${JWT_REFRESH_SECRET}
-
-Useful Commands:
-  All logs    : $DC logs -f
-  One service : $DC logs -f backend
-  Restart     : $DC restart backend
-  Stop all    : $DC down
-  Rebuild     : sudo bash setup.sh
-  Status      : $DC ps
-================================================================
-INFOEOF
-ok "Credentials saved → DEPLOYMENT_INFO.txt"
-
-# ── DONE ──────────────────────────────────────────────────────────
-echo ""
-echo -e "${GREEN}${BOLD}"
-echo "╔══════════════════════════════════════════════════════╗"
-echo "║   ✅  GPS SaaS Platform — SETUP COMPLETE!            ║"
-echo "╠══════════════════════════════════════════════════════╣"
-echo "║                                                      ║"
-printf "║   🌐 Portal  → http://%-29s║\n" "${PUBLIC_IP}"
-printf "║   🔧 Admin   → http://%-29s║\n" "${PUBLIC_IP}/admin"
-printf "║   📡 API     → http://%-29s║\n" "${PUBLIC_IP}/api"
-printf "║   🛰️  TCP     → %-34s║\n" "${PUBLIC_IP}:5000"
-echo "║                                                      ║"
-echo "║   👤 admin@gps.local  /  Admin@123!                  ║"
-echo "║                                                      ║"
-echo "║   📋 cat DEPLOYMENT_INFO.txt   ← all passwords       ║"
-echo "║   📊 $DC logs -f          ← live logs           ║"
-echo "║                                                      ║"
-echo "║   🧪 Test without hardware:                          ║"
-echo "║      Login → Admin Panel → Device Tester             ║"
-echo "╚══════════════════════════════════════════════════════╝"
-echo -e "${NC}"

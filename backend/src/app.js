@@ -2,7 +2,6 @@ require("dotenv").config();
 const express        = require("express");
 const cors           = require("cors");
 const helmet         = require("helmet");
-const mongoSanitize  = require("express-mongo-sanitize");
 const rateLimit      = require("express-rate-limit");
 const morgan         = require("morgan");
 const logger         = require("./utils/logger");
@@ -27,8 +26,8 @@ app.use("/api/billing/webhook", express.raw({ type: "application/json" }));
 app.use(express.json({ limit: "10kb" }));
 app.use(express.urlencoded({ extended: true, limit: "10kb" }));
 
-// ── NoSQL injection protection ────────────────────────────────
-app.use(mongoSanitize());
+// ── SQL Injection protection is handled by Sequelize parameterized queries ───
+// Sequelize automatically prevents SQL injection through its ORM layer
 
 // ── Rate limiting ─────────────────────────────────────────────
 const limiter = rateLimit({
@@ -84,4 +83,3 @@ app.use((err, req, res, _next) => {
 });
 
 module.exports = app;
-
