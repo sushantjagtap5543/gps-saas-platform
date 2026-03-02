@@ -21,6 +21,7 @@ services:
       retries: 10
     restart: always
 
+
   # ── Redis ──────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
@@ -35,33 +36,36 @@ services:
       retries: 5
     restart: always
 
+
   # ─── Backend API ───────────────────────────────────────────
   backend:
     build: ./backend
     container_name: gps_backend
     env_file: .env.production
     environment:
-      POSTGRES_HOST:     postgres
-      POSTGRES_PORT:     5432
-      POSTGRES_DB:       gpsdb
-      POSTGRES_USER:     gpsuser
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      REDIS_HOST:        redis
-      REDIS_PORT:        6379
+      PORT:               5024   # ✅ FIXED
+      POSTGRES_HOST:      postgres
+      POSTGRES_PORT:      5432
+      POSTGRES_DB:        gpsdb
+      POSTGRES_USER:      gpsuser
+      POSTGRES_PASSWORD:  ${POSTGRES_PASSWORD}
+      REDIS_HOST:         redis
+      REDIS_PORT:         6379
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
     ports:
-      - "5024:3000"   # host 5024 -> container 3000 (Dockerfile exposes 3000)
+      - "5024:5024"   # ✅ FIXED
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/health | grep -q '\"status\"' || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5024/health | grep -q '\"status\"' || exit 1"]
       interval: 20s
       timeout: 10s
       retries: 5
       start_period: 90s
     restart: always
+
 
   # ─── TCP GPS Device Server ─────────────────────────────────
   tcp-server:
@@ -77,6 +81,7 @@ services:
         condition: service_healthy
     restart: always
 
+
   # ─── Notification Worker ───────────────────────────────────
   notifications:
     build: ./notifications
@@ -90,6 +95,7 @@ services:
         condition: service_healthy
     restart: always
 
+
   # ─── Frontend (Customer Portal) ────────────────────────────
   frontend:
     build:
@@ -100,6 +106,7 @@ services:
     container_name: gps_frontend
     restart: always
 
+
   # ─── Admin Panel ───────────────────────────────────────────
   gps-admin:
     build:
@@ -109,6 +116,7 @@ services:
         VITE_SOCKET_URL: /
     container_name: gps_admin
     restart: always
+
 
   # ─── Nginx Reverse Proxy ───────────────────────────────────
   nginx:
@@ -126,6 +134,7 @@ services:
       - frontend
       - gps-admin
     restart: always
+
 
 volumes:
   postgres_data:
