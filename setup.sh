@@ -461,14 +461,29 @@ EOF
 
 # ── 11. DIRECTORIES + SSL ─────────────────────────────────────────
 step "Creating directories and SSL certificate..."
-mkdir -p nginx/ssl logs backend/logs 2>/dev/null || true
+
+# Fix ownership if nginx/ssl was accidentally created by root
+if [ -d nginx/ssl ] && [ ! -w nginx/ssl ]; then
+    warn "nginx/ssl owned by root — fixing permissions..."
+    sudo chown -R "$(whoami):$(whoami)" nginx/ssl
+fi
+
+mkdir -p nginx/ssl logs backend/logs
+sudo chown -R "$(whoami):$(whoami)" nginx/ssl logs backend/logs 2>/dev/null || true
 
 if [ ! -f nginx/ssl/nginx.crt ]; then
     openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
         -keyout nginx/ssl/nginx.key \
         -out    nginx/ssl/nginx.crt \
-        -subj "/C=IN/ST=MH/L=Mumbai/O=GPS/CN=localhost" 2>/dev/null
-    ok "Self-signed SSL cert created"
+        -subj "/C=IN/ST=MH/L=Mumbai/O=GPS/CN=localhost" 2>/dev/null \
+        && ok "Self-signed SSL cert created" \
+        || { warn "openssl failed — retrying with sudo...";
+             sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+               -keyout nginx/ssl/nginx.key \
+               -out    nginx/ssl/nginx.crt \
+               -subj "/C=IN/ST=MH/L=Mumbai/O=GPS/CN=localhost" 2>/dev/null;
+             sudo chown "$(whoami):$(whoami)" nginx/ssl/nginx.key nginx/ssl/nginx.crt;
+             ok "Self-signed SSL cert created (via sudo)"; }
 else
     ok "SSL cert exists"
 fi

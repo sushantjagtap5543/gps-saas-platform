@@ -1,6 +1,6 @@
 const router = require("express").Router();
 const { authenticate: auth } = require("../../middleware/auth.middleware");
-const rbac   = require("../../middleware/rbac.middleware");
+const { authorize: rbac } = require("../../middleware/rbac.middleware");
 const svc    = require("./branding.service");
 
 router.get("/", async (req, res) => {
