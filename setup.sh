@@ -277,6 +277,13 @@ POSTGRES_USER=gpsuser
 POSTGRES_PASSWORD=${DB_PASSWORD}
 DATABASE_URL=postgresql://gpsuser:${DB_PASSWORD}@postgres:5432/gpsdb
 
+# ── DB_* aliases (backend/src/models/index.js uses these) ──────
+DB_HOST=postgres
+DB_PORT=5432
+DB_NAME=gpsdb
+DB_USER=gpsuser
+DB_PASSWORD=${DB_PASSWORD}
+
 REDIS_HOST=redis
 REDIS_PORT=6379
 REDIS_PASSWORD=${REDIS_PASSWORD}
