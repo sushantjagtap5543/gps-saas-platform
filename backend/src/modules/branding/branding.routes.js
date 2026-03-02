@@ -1,5 +1,5 @@
 const router = require("express").Router();
-const auth   = require("../../middleware/auth.middleware");
+const { authenticate: auth } = require("../../middleware/auth.middleware");
 const rbac   = require("../../middleware/rbac.middleware");
 const svc    = require("./branding.service");
 
