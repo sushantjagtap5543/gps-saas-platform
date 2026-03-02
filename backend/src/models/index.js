@@ -111,7 +111,7 @@ const GpsLive = sequelize.define("GpsLive", {
 }, { tableName: "gps_live" });
 
 const GpsHistory = sequelize.define("GpsHistory", {
-  id:        { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4 },
+  id:        { type: DataTypes.UUID, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
   device_id: { type: DataTypes.UUID, allowNull: false },
   latitude:  { type: DataTypes.DOUBLE, allowNull: false },
   longitude: { type: DataTypes.DOUBLE, allowNull: false },
