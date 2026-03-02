@@ -371,6 +371,7 @@ cat > backend/package.json << 'EOF'
     "joi":                    "^17.13.3",
     "jsonwebtoken":           "^9.0.2",
     "morgan":                 "^1.10.0",
+    "node-cron":              "^3.0.3",
     "pdfkit":                 "^0.15.0",
     "pg":                     "^8.12.0",
     "pg-hstore":              "^2.3.4",
