@@ -7,7 +7,7 @@ services:
     container_name: gps_postgres
     environment:
       POSTGRES_USER:     gpsuser
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: postgres123
       POSTGRES_DB:       gpsdb
     volumes:
       - postgres_data:/var/lib/postgresql/data
