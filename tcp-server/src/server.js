@@ -71,7 +71,7 @@ async function startCommandDispatcher() {
 
   while (true) {
     try {
-      const result = await redis.blPop("cmd:queue", 5);
+      const result = await redis.blpop("cmd:queue", 5);
       if (!result) continue;
 
       const { cmdId, imei, command } = JSON.parse(result[1]);
