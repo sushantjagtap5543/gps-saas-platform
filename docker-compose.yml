@@ -1,6 +1,5 @@
-version: "3.9"
-
 services:
+
   # ── PostgreSQL ─────────────────────────────────────────────
   postgres:
     image: postgis/postgis:15-3.3
@@ -19,7 +18,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-    restart: always
+    restart: unless-stopped
 
 
   # ── Redis ──────────────────────────────────────────────────
@@ -28,58 +27,64 @@ services:
     container_name: gps_redis
     command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
     ports:
-      - "127.0.0.1:6379:6379"
+      - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
-    restart: always
+    restart: unless-stopped
 
 
   # ─── Backend API ───────────────────────────────────────────
   backend:
     build: ./backend
     container_name: gps_backend
-    env_file: .env.production
     environment:
-      PORT:               5024   # ✅ FIXED
-      POSTGRES_HOST:      postgres
-      POSTGRES_PORT:      5432
-      POSTGRES_DB:        gpsdb
-      POSTGRES_USER:      gpsuser
-      POSTGRES_PASSWORD:  ${POSTGRES_PASSWORD}
-      REDIS_HOST:         redis
-      REDIS_PORT:         6379
+      PORT: 5024
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: gpsdb
+      DB_USER: gpsuser
+      DB_PASSWORD: postgres123
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
     ports:
-      - "5024:5024"   # ✅ FIXED
+      - "5024:5024"
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:5024/health | grep -q '\"status\"' || exit 1"]
-      interval: 40s
-      timeout: 20s
-      retries: 10
-      start_period: 180s
-    restart: always
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5024/health | grep -q status || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
 
 
   # ─── TCP GPS Device Server ─────────────────────────────────
   tcp-server:
     build: ./tcp-server
     container_name: gps_tcp_server
-    ports:
-      - "5000:5000"
     environment:
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: gpsdb
+      DB_USER: gpsuser
+      DB_PASSWORD: postgres123
     depends_on:
       redis:
         condition: service_healthy
-    restart: always
+      postgres:
+        condition: service_healthy
+    ports:
+      - "5000:5000"
+    restart: unless-stopped
 
 
   # ─── Notification Worker ───────────────────────────────────
@@ -87,16 +92,15 @@ services:
     build: ./notifications
     container_name: gps_notifications
     environment:
-      REDIS_HOST:               redis
-      REDIS_PORT:               6379
-      FIREBASE_SERVICE_ACCOUNT: ${FIREBASE_SERVICE_ACCOUNT:-}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
     depends_on:
       redis:
         condition: service_healthy
-    restart: always
+    restart: unless-stopped
 
 
-  # ─── Frontend (Customer Portal) ────────────────────────────
+  # ─── Frontend ──────────────────────────────────────────────
   frontend:
     build:
       context: ./frontend
@@ -104,7 +108,7 @@ services:
         VITE_API_URL: /api
         VITE_SOCKET_URL: /
     container_name: gps_frontend
-    restart: always
+    restart: unless-stopped
 
 
   # ─── Admin Panel ───────────────────────────────────────────
@@ -115,7 +119,7 @@ services:
         VITE_API_URL: /api
         VITE_SOCKET_URL: /
     container_name: gps_admin
-    restart: always
+    restart: unless-stopped
 
 
   # ─── Nginx Reverse Proxy ───────────────────────────────────
@@ -133,7 +137,7 @@ services:
       - backend
       - frontend
       - gps-admin
-    restart: always
+    restart: unless-stopped
 
 
 volumes:
