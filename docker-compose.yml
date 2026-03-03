@@ -16,10 +16,9 @@ services:
       - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://3.108.114.12:5024/health || exit 1"]
-      interval: 30s
-      timeout: 15s
-      retries: 10
-      start_period: 180s
+      interval: 10s
+      timeout: 5s
+      retries: 5
     restart: always
 
 
@@ -61,10 +60,10 @@ services:
       - "5024:5024"   # ✅ FIXED
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:5024/health | grep -q '\"status\"' || exit 1"]
-      interval: 20s
-      timeout: 10s
-      retries: 5
-      start_period: 90s
+      interval: 40s
+      timeout: 20s
+      retries: 10
+      start_period: 180s
     restart: always
 
 
